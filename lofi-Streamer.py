@@ -229,8 +229,20 @@ def _video_input_args(vf: Optional[Path]) -> Tuple[List[str], str]:
 
 # ---------------- METADATA ----------------
 
+def _normalize_tag_value(value: str) -> str:
+    """Collapse whitespace and strip control chars from metadata."""
+
+    if not value:
+        return ""
+    # ``split()`` without args treats any whitespace (including newlines)
+    # as separators, so re-joining with single spaces keeps console output
+    # readable and makes ffmpeg drawtext input predictable.
+    return " ".join(value.split())
+
 def _escape(s: str) -> str:
     """Escape text for safe use inside ffmpeg drawtext."""
+
+    s = _normalize_tag_value(s)
 
     # drawtext runs inside single quotes and treats ``:`` as parameter
     # separators.  Unescaped apostrophes in track metadata (e.g. Jimit -
@@ -252,12 +264,13 @@ def _get_now_playing(t: Path) -> str:
         import mutagen
         m = mutagen.File(t, easy=True)
         if m:
-            title = m.get("title",[""])[0]
-            artist = m.get("artist",[""])[0]
+            title = _normalize_tag_value(m.get("title",[""])[0])
+            artist = _normalize_tag_value(m.get("artist",[""])[0])
     except Exception:
         pass
 
-    if not title: title = t.stem
+    if not title:
+        title = _normalize_tag_value(t.stem)
     return f"{artist} - {title}" if artist else title
 
 # ---------------- FILTER CHAIN ----------------
@@ -284,7 +297,7 @@ def _build_filter_chain(video_ref: str, nowplaying: str, include_logo: bool) -> 
     else:
         logo = f"{video_ref}scale={OUTPUT_W}x{OUTPUT_H},format=yuv420p[vbase]"
 
-@@ -311,51 +325,51 @@ def _track_duration(t: Path) -> int:
+@@ -311,51 +338,51 @@ def _track_duration(t: Path) -> int:
 
 # ---------------- START STREAM ----------------
 
@@ -336,29 +349,6 @@ def main() -> int:
         return 1
 
     tracks = load_tracks()
-# ---------------- MAIN LOOP ----------------
-
-def main() -> int:
-    args = _parse_args()
-    print(f"🌙 LOFI STREAMER v{VERSION} — Bottom-Hugging Text + Cinematic Bar\n")
-
-    stream_url = load_stream_url()
-    if not stream_url:
-        print("❌ Missing RTMP URL!")
-        return 1
-
-    tracks = load_tracks()
-    if not tracks:
-        print("❌ No tracks found!")
-        return 1
-
-    video_file = load_video_file()
-    logo_file = load_logo_file()
-
-    if args.dry_run:
-        _print_config_summary(stream_url, tracks, video_file, logo_file)
-        return 0
-
     if SKIP_PI_READY_WAIT:
         print("⚡️ Skipping Pi readiness wait (LOFI_SKIP_READY_WAIT=1).")
     else:
