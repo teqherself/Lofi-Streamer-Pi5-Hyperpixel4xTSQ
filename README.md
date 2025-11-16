@@ -77,6 +77,8 @@ user account without editing the script.
 | `LOFI_YOUTUBE_URL` | *(unset)* | Destination RTMP endpoint (overrides file) |
 | `LOFI_CHECK_HOST` | `a.rtmp.youtube.com` | Host probed before streaming |
 | `LOFI_CHECK_PORT` | `1935` | TCP port probed before streaming |
+| `LOFI_SKIP_NETWORK_CHECK` | *(unset)* | When set, skips the socket probe before each track |
+| `LOFI_SKIP_READY_WAIT` | *(unset)* | When set, bypasses the Raspberry Pi readiness wait |
 
 +Example usage:
 
@@ -87,7 +89,9 @@ python3 lofi-streamer.py
 ```
 
 If the configured video file is missing, the streamer now falls back to a
-generated black 1280×720 canvas so that the RTMP output remains valid.
+generated black 1280×720 canvas so that the RTMP output remains valid.  For
+quick local iteration, set `LOFI_SKIP_READY_WAIT=1` to bypass the usual boot
+checks (network ping, DNS, NTP) that you already know are satisfied.
 
  ## 🔧 Installation
  
