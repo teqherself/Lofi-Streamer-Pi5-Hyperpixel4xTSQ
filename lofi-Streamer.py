@@ -16,6 +16,8 @@ from typing import Iterator, List, Optional
 #  + Pi-Safe Filters
 # -------------------------------------------------------
 
+VERSION = "7.4"
+
 OUTPUT_W = 1280
 OUTPUT_H = 720
 
@@ -41,34 +43,7 @@ def _env_path(name: str, default: Path) -> Path:
     except FileNotFoundError:
         return raw
 
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    try: return int(raw)
-    except: return default
-
-def _env_bool(name: str, default=False):
-    raw = os.environ.get(name)
-    if raw is None: return default
-    return raw.lower() in {"1","true","yes","on"}
-
-# ---------------- PATHS ----------------
-
-PLAYLIST_DIR = _env_path("LOFI_PLAYLIST_DIR", BASE_DIR / "Sounds")
-LOGO_DIR = _env_path("LOFI_BRAND_DIR", BASE_DIR / "Logo")
-VIDEO_DIR = _env_path("LOFI_VIDEO_DIR", BASE_DIR / "Videos")
-
-STREAM_URL_FILE = _env_path("LOFI_STREAM_URL_FILE", BASE_DIR / "stream_url.txt")
-STREAM_URL_ENV = os.environ.get("LOFI_YOUTUBE_URL", "")
-
-FFMPEG_LOGO = _env_path("LOFI_BRAND_IMAGE", LOGO_DIR / "LoFiLogo700.png")
-VIDEO_FILE = _env_path("LOFI_VIDEO_FILE", VIDEO_DIR / "Lofi3.mp4")
-
-FALLBACK_COLOR = os.environ.get("LOFI_FALLBACK_COLOR", "black")
-FALLBACK_FPS = _env_int("LOFI_FALLBACK_FPS", 30)
-
-CHECK_HOST = os.environ.get("LOFI_CHECK_HOST", "a.rtmp.youtube.com")
+@@ -72,54 +74,61 @@ CHECK_HOST = os.environ.get("LOFI_CHECK_HOST", "a.rtmp.youtube.com")
 CHECK_PORT = _env_int("LOFI_CHECK_PORT", 1935)
 
 SKIP_NETWORK_CHECK = _env_bool("LOFI_SKIP_NETWORK_CHECK")
@@ -94,10 +69,17 @@ def wait_for_pi_ready():
             time.sleep(2)
 
     while True:
+        try:
+            yr = int(subprocess.check_output(["date", "+%Y"]).decode().strip())
+        except (subprocess.CalledProcessError, ValueError):
+            yr = 0
 
-        yr = int(subprocess.check_output(["date","+%Y"]).decode().strip())
         if yr >= 2023:
             print("⏱ Time synced")
+            break
+
+        print("⏳ Waiting for system clock…")
+        time.sleep(2)
 def _is_valid_audio(t: Path) -> bool:
     lower = t.name.lower()
     if lower.startswith("._"): return False
@@ -123,136 +105,7 @@ def load_tracks():
     print(f"🎶 Loaded {len(tracks)} tracks.")
     return tracks
 
-def load_video_file():
-    if VIDEO_FILE.exists():
-        return VIDEO_FILE
-    print(f"⚠️ Video file missing, fallback color feed will be used: {VIDEO_FILE}")
-    return None
-
-def load_logo_file():
-    if FFMPEG_LOGO.exists():
-        return FFMPEG_LOGO
-    print(f"⚠️ Logo image missing, overlay will be skipped: {FFMPEG_LOGO}")
-    return None
-
-def _playlist_iterator(tracks):
-    while True:
-        cycle = list(tracks)
-        random.shuffle(cycle)
-        for t in cycle:
-            yield t
-
-# ---------------- NETWORK CHECK ----------------
-
-def check_network():
-    if SKIP_NETWORK_CHECK:
-        return True
-    try:
-        with socket.create_connection((CHECK_HOST, CHECK_PORT), timeout=3):
-            return True
-    except:
-        return False
-
-# ---------------- VIDEO INPUT ----------------
-
-def _video_input_args(vf):
-    if vf and vf.exists():
-        return ["-stream_loop","-1","-re","-i",str(vf)], "[0:v]"
-    return [
-        "-f","lavfi","-re",
-        "-i",f"color=c={FALLBACK_COLOR}:s={OUTPUT_W}x{OUTPUT_H}:r={FALLBACK_FPS}"
-    ], "[0:v]"
-
-# ---------------- METADATA ----------------
-
-def _escape(s: str):
-    return s.replace(":", "\\:")
-
-def _get_now_playing(t: Path) -> str:
-    title = ""; artist = ""
-    try:
-        import mutagen
-        m = mutagen.File(t, easy=True)
-        if m:
-            title = m.get("title",[""])[0]
-            artist = m.get("artist",[""])[0]
-    except: pass
-
-    if not title: title = t.stem
-    return _escape(f"{artist} - {title}" if artist else title)
-
-# ---------------- FILTER CHAIN ----------------
-
-def _build_filter_chain(video_ref, nowplaying, include_logo: bool):
-
-    total_w = VU_SEG_WIDTH * 8
-    vh = VU_HEIGHT
-
-    logo_x = 540
-    logo_y = 40
-
-    bar_x = 45
-    bar_y = OUTPUT_H - vh - 25   # = 580 on 720p
-
-    # Bottom hugging position for text:
-    text_y = OUTPUT_H - 25 - 28   # 720 - 20 - fontsize
-
-    if include_logo:
-        logo = (
-            f"{video_ref}scale={OUTPUT_W}x{OUTPUT_H},format=yuv420p[v0];"
-            f"[v0][2:v]overlay={logo_x}:{logo_y}[vbase]"
-        )
-    else:
-        logo = f"{video_ref}scale={OUTPUT_W}x{OUTPUT_H},format=yuv420p[vbase]"
-
-    bar = (
-        f"[1:a]asplit=2[a_raw][a_vis];"
-        f"[a_raw]loudnorm=I=-16:LRA=11:TP=-1.5[aout];"
-        f"[a_vis]showfreqs=s={total_w}x{vh}[vf];"
-        f"[vf]format=rgba,colorchannelmixer="
-        f"rr=0.6:gg=0.6:bb=0.6:aa=1[vbar];"
-        f"[vbase][vbar]overlay={bar_x}:{bar_y}[vstrip]"
-    )
-
-    text = (
-        f"[vstrip]drawtext=text='Now Playing\\: {nowplaying}':"
-        f"fontcolor=white:fontsize=28:"
-        f"shadowcolor=black:shadowx=2:shadowy=2:"
-        f"x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
-    )
-
-    return f"{logo};{bar};{text}"
-
-# ---------------- TRACK DURATION ----------------
-
-def _track_duration(t: Path) -> int:
-    try:
-        import mutagen
-        m = mutagen.File(t)
-        if m and m.info:
-            return int(m.info.length)
-    except: pass
-
-    try:
-        r = subprocess.run(
-            ["ffprobe","-v","error","-show_entries","format=duration",
-             "-of","default=noprint_wrappers=1:nokey=1",str(t)],
-            capture_output=True,text=True
-        )
-        return int(float(r.stdout.strip()))
-    except:
-        return 180
-
-# ---------------- START STREAM ----------------
-
-def start_stream(track, stream_url, video_file, duration, logo_file):
-
-    nowp = _get_now_playing(track)
-    print(f"🎧 {nowp}")
-
-    video_args, video_ref = _video_input_args(video_file)
-
-    cmd = [
+@@ -256,51 +265,51 @@ def start_stream(track, stream_url, video_file, duration, logo_file):
         "ffmpeg","-hide_banner","-loglevel","error",
         *video_args, "-i", str(track)
     ]
@@ -278,7 +131,7 @@ def start_stream(track, stream_url, video_file, duration, logo_file):
 # ---------------- MAIN LOOP ----------------
 
 def main() -> int:
-    print("🌙 LOFI STREAMER v7.3 — Bottom-Hugging Text + Cinematic Bar\n")
+    print(f"🌙 LOFI STREAMER v{VERSION} — Bottom-Hugging Text + Cinematic Bar\n")
 
     stream_url = load_stream_url()
     if not stream_url:
