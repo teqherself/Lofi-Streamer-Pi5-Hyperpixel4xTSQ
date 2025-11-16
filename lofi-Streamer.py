@@ -5,7 +5,7 @@ import random
 import socket
 import subprocess
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Iterator, List, Optional
 
 # -------------------------------------------------------
 #  LOFI STREAMER v3.0 — GENDEMIK DIGITAL
@@ -35,6 +35,24 @@ def _env_path(name: str, default: Path) -> Path:
         return raw_path
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"⚠️ Invalid integer for {name!s}: {raw!r} — using {default}.")
+        return default
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 PLAYLIST_DIR = _env_path("LOFI_PLAYLIST_DIR", BASE_DIR / "Sounds")
 LOGO_DIR = _env_path("LOFI_BRAND_DIR", BASE_DIR / "Logo")
 VIDEO_DIR = _env_path("LOFI_VIDEO_DIR", BASE_DIR / "Videos")
@@ -44,7 +62,13 @@ FFMPEG_LOGO = _env_path("LOFI_BRAND_IMAGE", LOGO_DIR / "LoFiLogo700.png")
 VIDEO_FILE = _env_path("LOFI_VIDEO_FILE", VIDEO_DIR / "Lofi3.mp4")
 STREAM_URL_ENV = os.environ.get("LOFI_YOUTUBE_URL", "")
 CHECK_HOST = os.environ.get("LOFI_CHECK_HOST", "a.rtmp.youtube.com")
-CHECK_PORT = int(os.environ.get("LOFI_CHECK_PORT", "1935"))
+CHECK_PORT = _env_int("LOFI_CHECK_PORT", 1935)
+FALLBACK_COLOR = os.environ.get("LOFI_FALLBACK_COLOR", "black")
+FALLBACK_SIZE = os.environ.get("LOFI_FALLBACK_SIZE", "1280x720")
+FALLBACK_FPS = os.environ.get("LOFI_FALLBACK_FPS", "30")
+LOGO_PADDING = _env_int("LOFI_LOGO_PADDING", 40)
+TRACK_EXIT_BUFFER = _env_int("LOFI_TRACK_EXIT_BUFFER", 5)
+SKIP_NETWORK_CHECK = _env_bool("LOFI_SKIP_NETWORK_CHECK")
 
 # -------------------------------------------------------
 
@@ -59,7 +83,7 @@ def load_stream_url():
     print("❌ No stream URL configured! Set LOFI_YOUTUBE_URL or create stream_url.txt.")
     return ""
 
-def load_tracks():
+def load_tracks() -> List[Path]:
     if not PLAYLIST_DIR.exists():
         print("❌ Sounds folder missing:", PLAYLIST_DIR)
         return []
@@ -67,7 +91,7 @@ def load_tracks():
     tracks = [
         t
         for t in PLAYLIST_DIR.iterdir()
-        if t.suffix.lower() in [".mp3", ".wav", ".m4a", ".flac"]
+        if t.is_file() and t.suffix.lower() in [".mp3", ".wav", ".m4a", ".flac"]
     ]
 
     print(f"🎶 Loaded {len(tracks)} tracks from playlist directory {PLAYLIST_DIR}.")
@@ -82,6 +106,10 @@ def load_video_file():
     return None
 
 def check_network():
+    if SKIP_NETWORK_CHECK:
+        print("⚠️ Skipping network connectivity probe (LOFI_SKIP_NETWORK_CHECK set).")
+        return True
+
     print(f"🌐 Checking network connectivity to {CHECK_HOST}:{CHECK_PORT}...")
     try:
         with socket.create_connection((CHECK_HOST, CHECK_PORT), timeout=3):
@@ -98,11 +126,100 @@ def _video_input_args(video_file: Optional[Path]):
         return ["-stream_loop", "-1", "-re", "-i", str(video_file)], "[0:v]"
 
     # Fall back to a generated black background if no video file is available.
-    return ["-f", "lavfi", "-re", "-i", "color=c=black:s=1280x720:r=30"], "[0:v]"
+    fallback = f"color=c={FALLBACK_COLOR}:s={FALLBACK_SIZE}:r={FALLBACK_FPS}"
+    return ["-f", "lavfi", "-re", "-i", fallback], "[0:v]"
 
 
-def start_stream(track, stream_url, video_file):
-    print(f"🎧 Now playing: {track.name}")
+def _logo_overlay_filter(video_ref: str) -> str:
+    if not FFMPEG_LOGO.exists():
+        print("⚠️ Logo image not found, streaming without overlay.")
+        return f"{video_ref}scale=1280:720,format=yuv420p[v0]"
+
+    pad = LOGO_PADDING
+    return (
+        f"{video_ref}scale=1280:720,format=yuv420p[v0];"
+        f"[v0][2:v]overlay=W-w-{pad}:H-h-{pad}[vout]"
+    )
+
+
+def _playlist_cycle(tracks: Iterable[Path]) -> Iterator[Path]:
+    ordered = list(tracks)
+    if not ordered:
+        return iter(())
+
+    def generator():
+        while True:
+            random.shuffle(ordered)
+            for track in ordered:
+                yield track
+
+    return generator()
+
+
+def _track_duration(track: Path) -> int:
+    """Return track length in seconds (fallback to 180)."""
+
+    try:
+        import mutagen  # type: ignore
+
+        audio = mutagen.File(track)
+        if audio and audio.info and getattr(audio.info, "length", None):
+            return max(10, int(audio.info.length))
+    except Exception:
+        pass
+
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(track),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        seconds = float(result.stdout.strip())
+        if seconds > 0:
+            return max(10, int(seconds))
+    except Exception:
+        pass
+
+    return 180
+
+
+def _wait_for_track(process: subprocess.Popen, duration: int):
+    """Wait for ffmpeg to end naturally, but kill it if it overruns."""
+
+    timeout = max(1, duration + max(0, TRACK_EXIT_BUFFER))
+    start = time.time()
+    try:
+        process.wait(timeout=timeout)
+        elapsed = time.time() - start
+        if process.returncode == 0:
+            print(f"ℹ️ FFmpeg exited on its own after {elapsed:.1f}s (track complete).")
+        else:
+            print(
+                f"⚠️ FFmpeg exited early with code {process.returncode} after {elapsed:.1f}s."
+            )
+    except subprocess.TimeoutExpired:
+        print("⚠️ FFmpeg still running after track ended — terminating.")
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        else:
+            print("✅ FFmpeg terminated after manual stop.")
+
+
+def start_stream(track, stream_url, video_file, duration):
+    print(f"🎧 Now playing: {track.name} ({duration}s)")
 
     video_args, video_ref = _video_input_args(video_file)
     cmd = [
@@ -120,7 +237,7 @@ def start_stream(track, stream_url, video_file):
 
     if FFMPEG_LOGO.exists():
         cmd += ["-loop", "1", "-i", str(FFMPEG_LOGO)]
-        filter_chain = f"{video_ref}scale=1280:720,format=yuv420p[v0];[v0][2:v]overlay=W-w-40:H-h-40[vout]"
+        filter_chain = _logo_overlay_filter(video_ref)
         map_args = ["-map", "[vout]", "-map", "1:a"]
     else:
         print("⚠️ Logo image not found, streaming without overlay.")
@@ -141,6 +258,7 @@ def start_stream(track, stream_url, video_file):
         "160k",
         "-pix_fmt",
         "yuv420p",
+        "-shortest",
         "-f",
         "flv",
         stream_url,
@@ -165,29 +283,16 @@ def main():
 
     video_file = load_video_file()
 
-    while True:
+    playlist = _playlist_cycle(tracks)
+
+    for track in playlist:
         if not check_network():
             time.sleep(5)
             continue
 
-        track = random.choice(tracks)
-        process = start_stream(track, stream_url, video_file)
-
-        # Wait for track to finish (approx)
-        track_length = 180  # default fallback if unknown
-        try:
-            import mutagen
-            audio = mutagen.File(track)
-            if audio and audio.info:
-                track_length = int(audio.info.length)
-        except Exception:
-            pass  # ignore if mutagen not installed
-
-        time.sleep(track_length)
-
-        # Kill FFmpeg (if still running)
-        if process.poll() is None:
-            process.terminate()
+        duration = _track_duration(track)
+        process = start_stream(track, stream_url, video_file, duration)
+        _wait_for_track(process, duration)
 
 # -------------------------------------------------------
 
