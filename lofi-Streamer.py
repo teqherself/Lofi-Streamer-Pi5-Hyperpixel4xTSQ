@@ -230,7 +230,19 @@ def _video_input_args(vf: Optional[Path]) -> Tuple[List[str], str]:
 # ---------------- METADATA ----------------
 
 def _escape(s: str) -> str:
-    return s.replace(":", "\\:")
+    """Escape text for safe use inside ffmpeg drawtext."""
+
+    # drawtext runs inside single quotes and treats ``:`` as parameter
+    # separators.  Unescaped apostrophes in track metadata (e.g. Jimit -
+    # Home Cookin') break the filter graph which in turn removes the
+    # ``[vout]`` label ffmpeg expects.  Escape the few characters that
+    # routinely appear in tag strings so the Pi-friendly defaults work
+    # out of the box.
+    return (
+        s.replace("\\", "\\\\")
+         .replace("'", r"\\'")
+         .replace(":", "\\:")
+    )
 
 def _get_now_playing(t: Path) -> str:
     title = ""; artist = ""
