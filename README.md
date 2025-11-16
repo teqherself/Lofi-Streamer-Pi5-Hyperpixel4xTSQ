@@ -1,4 +1,4 @@
-# 🌙 Lofi Streamer — Raspberry Pi Full Project README
+# 🌙 Lofi Streamer — Raspberry Pi Full Project - WORK IN PROGRESS - README
 
 ## Overview
 
