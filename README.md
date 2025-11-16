@@ -297,7 +297,7 @@ The dashboard can be extended to switch videos on the fly.
 
 ## 👤 Author
 
-**Ms. Stevie Woo (GendemiK Digital)**
+**Ms. Stevie Woo (GendemiK Digital/Teqherself)**
 
 Custom Raspberry Pi pipelines, creative streaming tools, and lofi engineering magic.
 
