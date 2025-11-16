@@ -39,7 +39,7 @@ LofiStream/
 
 ## ✔️ Features
 
-### Lofi Streamer Core (lofi-streamer.py)
+### Lofi Streamer Core - STANDALONE SERVER (lofi-streamer.py) 
 
 * Auto‑loads all `.mp3` files from the Sounds folder
 * Random shuffle playback with auto‑next-track switching
@@ -50,7 +50,7 @@ LofiStream/
 * Checks network connectivity before attempting stream
 * Displays friendly terminal output with status icons
 
-### Dashboard
+### Dashboard - Ommited until rebuilt.
 
 * Browser-based interface (Flask)
 * Shows current track, uptime, stream health
