@@ -295,6 +295,9 @@ def main():
     video_file = load_video_file()
 
     while True:
+        if len(tracks) > 1:
+            random.shuffle(tracks)
+            print(f"🔀 Shuffled playlist order for {len(tracks)} tracks.")
         for track in tracks:
             if not check_network():
                 time.sleep(5)
