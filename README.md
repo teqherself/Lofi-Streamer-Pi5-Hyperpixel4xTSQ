@@ -125,7 +125,7 @@ python3 ~/LofiStream/Servers/lofi-streamer.py
 You should see something like:
 
 ```
-🌙 LOFI STREAMER — GENDEMIK DIGITAL
+🌙 LOFI STREAMER — GENDEMIK DIGITAL RC 0.4
 🌐 Checking network connectivity to RTMP host...
 🎶 Loaded 71 tracks from playlist directory.
 📡 Starting YouTube stream via ffmpeg...
