@@ -187,8 +187,7 @@ def stream_forever():
             for track in tracks:
                 write_track_name(track)
                 duration = get_track_duration(track)
-                print(f"🎧 Now playing: {get_track_name(track)} ({int(duration)>
-
+                print(f"🎧 Now playing: {get_track_name(track)} ({int(duration)}s)")
                 elapsed = 0
                 step = 5
 
