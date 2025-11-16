@@ -282,7 +282,7 @@ def main():
     stream_url = load_stream_url()
     if not stream_url:
         print("❌ Missing RTMP URL!")
-       return
+        return
 
     tracks = load_tracks()
     if not tracks:
