@@ -131,7 +131,10 @@ def load_tracks():
     return tracks
 
 def load_video_file():
-    return VIDEO_FILE if VIDEO_FILE.exists() else None
+    if VIDEO_FILE.exists():
+        return VIDEO_FILE
+    print(f"⚠️ Video file missing, fallback color feed will be used: {VIDEO_FILE}")
+    return None
 
 def _playlist_iterator(tracks):
     while True:
@@ -157,98 +160,7 @@ def _video_input_args(vf):
     if vf and vf.exists():
         return ["-stream_loop","-1","-re","-i",str(vf)], "[0:v]"
     return [
-        "-f","lavfi","-re",
-        "-i",f"color=c={FALLBACK_COLOR}:s={OUTPUT_W}x{OUTPUT_H}:r={FALLBACK_FPS}"
-    ], "[0:v]"
-
-# ---------------- METADATA ----------------
-
-def _escape(s: str):
-    return s.replace(":", "\\:")
-
-def _get_now_playing(t: Path) -> str:
-    title = ""; artist = ""
-    try:
-        import mutagen
-        m = mutagen.File(t, easy=True)
-        if m:
-            title = m.get("title",[""])[0]
-            artist = m.get("artist",[""])[0]
-    except: pass
-
-    if not title: title = t.stem
-    return _escape(f"{artist} - {title}" if artist else title)
-
-# ---------------- FILTER CHAIN ----------------
-
-def _build_filter_chain(video_ref, nowplaying):
-
-    total_w = VU_SEG_WIDTH * 8
-    vh = VU_HEIGHT
-
-    logo_x = 540
-    logo_y = 40
-
-    bar_x = 45
-    bar_y = OUTPUT_H - vh - 25   # = 580 on 720p
-
-    # Bottom hugging position for text:
-    text_y = OUTPUT_H - 25 - 28   # 720 - 20 - fontsize
-
-    if FFMPEG_LOGO.exists():
-        logo = (
-            f"{video_ref}scale={OUTPUT_W}x{OUTPUT_H},format=yuv420p[v0];"
-            f"[v0][2:v]overlay={logo_x}:{logo_y}[vbase]"
-        )
-    else:
-        logo = f"{video_ref}scale={OUTPUT_W}x{OUTPUT_H},format=yuv420p[vbase]"
-
-    bar = (
-        f"[1:a]asplit=2[a_raw][a_vis];"
-        f"[a_raw]loudnorm=I=-16:LRA=11:TP=-1.5[aout];"
-        f"[a_vis]showfreqs=s={total_w}x{vh}[vf];"
-        f"[vf]format=rgba,colorchannelmixer="
-        f"rr=0.6:gg=0.6:bb=0.6:aa=1[vbar];"
-        f"[vbase][vbar]overlay={bar_x}:{bar_y}[vstrip]"
-    )
-
-    text = (
-        f"[vstrip]drawtext=text='Now Playing\\: {nowplaying}':"
-        f"fontcolor=white:fontsize=28:"
-        f"shadowcolor=black:shadowx=2:shadowy=2:"
-        f"x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
-    )
-
-    return f"{logo};{bar};{text}"
-
-# ---------------- TRACK DURATION ----------------
-
-def _track_duration(t: Path) -> int:
-    try:
-        import mutagen
-        m = mutagen.File(t)
-        if m and m.info:
-            return int(m.info.length)
-    except: pass
-
-    try:
-        r = subprocess.run(
-            ["ffprobe","-v","error","-show_entries","format=duration",
-             "-of","default=noprint_wrappers=1:nokey=1",str(t)],
-            capture_output=True,text=True
-        )
-        return int(float(r.stdout.strip()))
-    except:
-        return 180
-
-# ---------------- START STREAM ----------------
-
-def start_stream(track, stream_url, video_file, duration):
-
-    nowp = _get_now_playing(track)
-    print(f"🎧 {nowp}")
-
-    video_args, video_ref = _video_input_args(video_file)
+@@ -252,63 +255,65 @@ def start_stream(track, stream_url, video_file, duration):
 
     cmd = [
         "ffmpeg","-hide_banner","-loglevel","error",
@@ -287,9 +199,9 @@ def main() -> int:
         print("❌ No tracks found!")
         return 1
 
-    wait_for_pi_ready()
-
     video_file = load_video_file()
+
+    wait_for_pi_ready()
 
     for t in _playlist_iterator(tracks):
 
