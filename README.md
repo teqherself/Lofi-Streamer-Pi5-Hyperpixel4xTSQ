@@ -58,37 +58,6 @@ LofiStream/
 * Lets you change RTMP URL + Stream Key live
 * Lets you update or switch video background
 * Monitors the lofi service via logs and heartbeat
-
----
-diff --git a/README.md b/README.md
-index 68b867866ec9496460e9d782dfd08142495b4b09..2cf21244eacadad2de8c093a5a2623ee9ea3b47f 100644
---- a/README.md
-+++ b/README.md
-@@ -39,50 +39,79 @@ LofiStream/
- 
- ## ✔️ Features
- 
- ### Lofi Streamer Core (lofi-streamer.py)
- 
- * Auto‑loads all `.mp3` files from the Sounds folder
- * Random shuffle playback with auto‑next-track switching
- * Reads video file from `Videos/` (e.g., loopable MP4 artwork)
- * Keeps the stream online using ffmpeg
- * Crash recovery: automatically restarts ffmpeg if connection drops
- * Logs activity and "Now Playing" output
- * Checks network connectivity before attempting stream
- * Displays friendly terminal output with status icons
- 
- ### Dashboard
- 
- * Browser-based interface (Flask)
- * Shows current track, uptime, stream health
- * Allows start/stop/restart of the streamer service
- * Lets you change RTMP URL + Stream Key live
- * Lets you update or switch video background
- * Monitors the lofi service via logs and heartbeat
- 
- ---
  
 ## ⚙️ Runtime Overrides
 
