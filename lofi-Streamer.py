@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Iterator, List, Optional
 
 # -------------------------------------------------------
-#  LOFI STREAMER v4.2 — GENDEMIK DIGITAL
+#  LOFI STREAMER v4.3 — GENDEMIK DIGITAL
+#  + Pi Boot Readiness Wait
 #  + Top-Right Logo
 #  + Bottom-Right Now Playing Text
+#  + KEYFRAME-STABLE Streaming
 #  + macOS Junk Filter
-#  + KEYFRAME-STABLE STREAMING
 # -------------------------------------------------------
 
 def _detect_base_dir() -> Path:
@@ -77,6 +78,43 @@ TRACK_EXIT_BUFFER = _env_int("LOFI_TRACK_EXIT_BUFFER", 5)
 SKIP_NETWORK_CHECK = _env_bool("LOFI_SKIP_NETWORK_CHECK")
 
 # -------------------------------------------------------
+#  BOOT READINESS CHECK
+# -------------------------------------------------------
+
+def wait_for_pi_ready():
+    print("⏳ Waiting for Pi to be fully ready...")
+
+    # Wait for network interface
+    while True:
+        if os.system("ping -c 1 1.1.1.1 > /dev/null 2>&1") == 0:
+            print("🌐 Internet reachable.")
+            break
+        print("⏳ Waiting for network...")
+        time.sleep(2)
+
+    # Wait for DNS to work
+    while True:
+        try:
+            socket.gethostbyname("google.com")
+            print("🔍 DNS resolved successfully.")
+            break
+        except socket.gaierror:
+            print("⏳ Waiting for DNS...")
+            time.sleep(2)
+
+    # Wait for system clock to sync (VERY important for YouTube RTMP)
+    while True:
+        year = int(subprocess.check_output(["date", "+%Y"]).decode().strip())
+        if year >= 2023:
+            print("⏱ System time synced.")
+            break
+        print("⏳ Waiting for NTP time sync...")
+        time.sleep(2)
+
+    print("✅ Pi is fully ready to stream!\n")
+
+
+# -------------------------------------------------------
 #  FILTER macOS JUNK FILES
 # -------------------------------------------------------
 
@@ -84,7 +122,6 @@ JUNK_PREFIXES = ("._",)
 JUNK_FILES = {".ds_store", "thumbs.db"}
 
 def _is_valid_audio(track: Path) -> bool:
-    """Filter junk files + valid extensions."""
     name = track.name.lower()
     if name.startswith(JUNK_PREFIXES):
         return False
@@ -126,7 +163,6 @@ def load_video_file():
 # -------------------------------------------------------
 
 def _playlist_iterator(tracks: List[Path]) -> Iterator[Path]:
-    """Yield tracks forever, shuffle each loop."""
     while True:
         cycle = list(tracks)
         if len(cycle) > 1:
@@ -141,12 +177,9 @@ def _playlist_iterator(tracks: List[Path]) -> Iterator[Path]:
 
 def check_network():
     if SKIP_NETWORK_CHECK:
-        print("⚠️ Skipping network check.")
         return True
-    print(f"🌐 Checking {CHECK_HOST}:{CHECK_PORT}...")
     try:
         with socket.create_connection((CHECK_HOST, CHECK_PORT), timeout=3):
-            print("✅ Network OK.")
             return True
     except:
         print("❌ RTMP host unreachable.")
@@ -163,7 +196,7 @@ def _video_input_args(video_file: Optional[Path]):
     return ["-f", "lavfi", "-re", "-i", fallback], "[0:v]"
 
 # -------------------------------------------------------
-#  LOGO OVERLAY (TOP RIGHT)
+#  LOGO OVERLAY
 # -------------------------------------------------------
 
 def _logo_filter(video_ref: str) -> str:
@@ -176,16 +209,15 @@ def _logo_filter(video_ref: str) -> str:
     )
 
 # -------------------------------------------------------
-#  NOW PLAYING TEXT (BOTTOM RIGHT)
+#  NOW PLAYING TEXT
 # -------------------------------------------------------
 
-def _escape(text: str) -> str:
-    return text.replace(":", "\\:").replace("'", "\\'")
+def _escape(s: str) -> str:
+    return s.replace(":", "\\:").replace("'", "\\'")
 
 def _get_now_playing(track: Path) -> str:
     title = ""
     artist = ""
-
     try:
         import mutagen
         t = mutagen.File(track, easy=True)
@@ -206,8 +238,7 @@ def _text_filter(nowplaying: str) -> str:
     pad = TEXT_PADDING
     return (
         f"[vlog]drawtext=text='Now Playing\\: {nowplaying}':"
-        f"fontcolor=white:fontsize=28:"
-        f"shadowcolor=black:shadowx=2:shadowy=2:"
+        f"fontcolor=white:fontsize=28:shadowcolor=black:shadowx=2:shadowy=2:"
         f"x=W-tw-{pad}:y=H-th-{pad}[vout]"
     )
 
@@ -219,15 +250,15 @@ def _track_duration(track: Path) -> int:
     try:
         import mutagen
         a = mutagen.File(track)
-        if a and a.info and getattr(a.info, "length", None):
+        if a and a.info:
             return int(a.info.length)
     except:
         pass
 
     try:
         r = subprocess.run(
-            ["ffprobe","-v","error","-show_entries","format=duration",
-             "-of","default=noprint_wrappers=1:nokey=1",str(track)],
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(track)],
             capture_output=True, text=True
         )
         return int(float(r.stdout.strip()))
@@ -273,7 +304,6 @@ def start_stream(track, stream_url, video_file, duration):
         logo_filter = f"{video_ref}scale=1280:720,format=yuv420p[vlog]"
 
     text_filter = _text_filter(nowplaying)
-
     filter_chain = f"{logo_filter};{text_filter}"
 
     cmd += [
@@ -281,13 +311,10 @@ def start_stream(track, stream_url, video_file, duration):
         "-map", "[vout]",
         "-map", "1:a",
 
-        # ------------------------------
-        # KEYFRAME-STABLE SETTINGS
-        # ------------------------------
+        # KEYFRAME-STABLE SETTINGS:
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-b:v", "2500k",
-
         "-g", "60",
         "-keyint_min", "60",
         "-sc_threshold", "0",
@@ -295,7 +322,6 @@ def start_stream(track, stream_url, video_file, duration):
 
         "-c:a", "aac",
         "-b:a", "160k",
-
         "-pix_fmt", "yuv420p",
         "-shortest",
         "-f", "flv",
@@ -305,9 +331,14 @@ def start_stream(track, stream_url, video_file, duration):
     return subprocess.Popen(cmd)
 
 # -------------------------------------------------------
+#  MAIN
+# -------------------------------------------------------
 
 def main():
-    print("🌙 LOFI STREAMER v4.2 — GENDEMIK DIGITAL\n")
+    print("🌙 LOFI STREAMER v4.3 — GENDEMIK DIGITAL (Boot-Ready Edition)\n")
+
+    # NEW FEATURE:
+    wait_for_pi_ready()
 
     stream_url = load_stream_url()
     if not stream_url:
@@ -323,8 +354,10 @@ def main():
 
     for track in _playlist_iterator(tracks):
         if not check_network():
+            print("🌐 Network offline, retrying in 5s...")
             time.sleep(5)
             continue
+
         duration = _track_duration(track)
         p = start_stream(track, stream_url, video_file, duration)
         _wait_for_track(p, duration)
