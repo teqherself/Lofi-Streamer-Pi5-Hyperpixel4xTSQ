@@ -83,7 +83,7 @@ user account without editing the script.
 ```bash
 export LOFI_PLAYLIST_DIR="$HOME/Music/Lofi"
 export LOFI_YOUTUBE_URL="rtmp://b.rtmp.youtube.com/live2/test-key"
-python3 lofi-Streamer.py
+python3 lofi-streamer.py
 ```
 
 If the configured video file is missing, the streamer now falls back to a
@@ -121,7 +121,7 @@ python3 ~/LofiStream/Servers/lofi-streamer.py
 You should see something like:
 
 ```
-🌙 LOFI STREAMER v3.0 — GENDEMIK DIGITAL
+🌙 LOFI STREAMER — GENDEMIK DIGITAL
 🌐 Checking network connectivity to RTMP host...
 🎶 Loaded 71 tracks from playlist directory.
 📡 Starting YouTube stream via ffmpeg...
