@@ -250,7 +250,7 @@ def start_stream(track, stream_url, video_file, duration):
 
     video_args, video_ref = _video_input_args(video_file)
 
-        cmd = [
+    cmd = [
         "ffmpeg","-hide_banner","-loglevel","error",
         *video_args, "-i", str(track)
     ]
@@ -282,12 +282,12 @@ def main() -> int:
         print("❌ Missing RTMP URL!")
         return 1
 
-    wait_for_pi_ready()
-
     tracks = load_tracks()
     if not tracks:
         print("❌ No tracks found!")
         return 1
+
+    wait_for_pi_ready()
 
     video_file = load_video_file()
 
