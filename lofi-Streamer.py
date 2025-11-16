@@ -277,13 +277,13 @@ def start_stream(track, stream_url, video_file, duration):
 def main():
     print("🌙 LOFI STREAMER v7.3 — Bottom-Hugging Text + Cinematic Bar\n")
 
-    wait_for_pi_ready()
-
     stream_url = load_stream_url()
     if not stream_url:
         print("❌ Missing RTMP URL!")
         return
 
+    wait_for_pi_ready()
+        
     tracks = load_tracks()
     if not tracks:
         print("❌ No tracks found!")
