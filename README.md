@@ -12,7 +12,7 @@ Lofi Streamer is a fully automated Raspberry Pi–based streaming system designe
 
 This README documents the full architecture, install process, folder layout, and detailed specifications of `lofi-streamer.py`.
 
-### USE - STANDALONE SERVER (lofi-streamersimple.py) 
+### USE - STANDALONE SERVER (lofi-streamer.py) 
 
 This file is working fine and currently in use on my own server ;)
 
