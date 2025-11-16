@@ -245,6 +245,8 @@ def _escape(s: str) -> str:
     )
 
 def _get_now_playing(t: Path) -> str:
+    """Return a human-friendly description of the track."""
+
     title = ""; artist = ""
     try:
         import mutagen
@@ -256,7 +258,7 @@ def _get_now_playing(t: Path) -> str:
         pass
 
     if not title: title = t.stem
-    return _escape(f"{artist} - {title}" if artist else title)
+    return f"{artist} - {title}" if artist else title
 
 # ---------------- FILTER CHAIN ----------------
 
@@ -282,44 +284,7 @@ def _build_filter_chain(video_ref: str, nowplaying: str, include_logo: bool) -> 
     else:
         logo = f"{video_ref}scale={OUTPUT_W}x{OUTPUT_H},format=yuv420p[vbase]"
 
-    bar = (
-        f"[1:a]asplit=2[a_raw][a_vis];"
-        f"[a_raw]loudnorm=I=-16:LRA=11:TP=-1.5[aout];"
-        f"[a_vis]showfreqs=s={total_w}x{vh}[vf];"
-        f"[vf]format=rgba,colorchannelmixer="
-        f"rr=0.6:gg=0.6:bb=0.6:aa=1[vbar];"
-        f"[vbase][vbar]overlay={bar_x}:{bar_y}[vstrip]"
-    )
-
-    text = (
-        f"[vstrip]drawtext=text='Now Playing\\: {nowplaying}':"
-        f"fontcolor=white:fontsize=28:"
-        f"shadowcolor=black:shadowx=2:shadowy=2:"
-        f"x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
-    )
-
-    return f"{logo};{bar};{text}"
-
-# ---------------- TRACK DURATION ----------------
-
-def _track_duration(t: Path) -> int:
-    try:
-        import mutagen
-        m = mutagen.File(t)
-        if m and m.info:
-            return int(m.info.length)
-    except Exception:
-        pass
-
-    try:
-        r = subprocess.run(
-            ["ffprobe","-v","error","-show_entries","format=duration",
-             "-of","default=noprint_wrappers=1:nokey=1",str(t)],
-            capture_output=True,text=True
-        )
-        return int(float(r.stdout.strip()))
-    except Exception:
-        return 180
+@@ -311,51 +325,51 @@ def _track_duration(t: Path) -> int:
 
 # ---------------- START STREAM ----------------
 
@@ -345,7 +310,7 @@ def start_stream(
     if include_logo:
         cmd += ["-loop","1","-i",str(logo_file)]
 
-    filter_chain = _build_filter_chain(video_ref, nowp, include_logo)
+    filter_chain = _build_filter_chain(video_ref, _escape(nowp), include_logo)
 
     cmd += [
         "-filter_complex", filter_chain,
@@ -359,6 +324,18 @@ def start_stream(
 
     return subprocess.Popen(cmd)
 
+# ---------------- MAIN LOOP ----------------
+
+def main() -> int:
+    args = _parse_args()
+    print(f"🌙 LOFI STREAMER v{VERSION} — Bottom-Hugging Text + Cinematic Bar\n")
+
+    stream_url = load_stream_url()
+    if not stream_url:
+        print("❌ Missing RTMP URL!")
+        return 1
+
+    tracks = load_tracks()
 # ---------------- MAIN LOOP ----------------
 
 def main() -> int:
