@@ -17,50 +17,96 @@ VIDEO_DIR = BASE_DIR / "Videos"
 STREAM_URL_FILE = BASE_DIR / "stream_url.txt"
 
 FFMPEG_LOGO = LOGO_DIR / "LoFiLogo700.png"
+diff --git a/lofi-Streamer.py b/lofi-Streamer.py
+index 5f271d3ae48825bb19082992fd78def9b4cd95ae..f3c5eb12b4cd0fcf036288e4d73d16f41bdc3418 100644
+--- a/lofi-Streamer.py
++++ b/lofi-Streamer.py
+@@ -2,62 +2,75 @@
+ # ============================================================================
+ # 🌙 LOFI YOUTUBE STREAMER v3.1 — Pi Stable Edition
+ # ----------------------------------------------------------------------------
+ # Author:  Ms Stevie Woo (GENDEMIK DIGITAL)
+ # Year:    2025
+ #
+ # PURPOSE:
+ #   Streams a looping *silent* background MP4 video to YouTube RTMP while
+ #   playing shuffled lofi background audio. Logo & text overlays included.
+ #
+ # NOTES:
+ #   • Positions of logo & track text overlay EXACTLY as provided
+ #   • Audio comes ONLY from playlist, not the video
+ #   • Filters out macOS “._” ghost files that break ffmpeg
+ #   • Clean, stable, restart-safe streaming engine
+ # ============================================================================
+ 
+ import os
+ import random
+ import time
+ import socket
+ import subprocess
+ from mutagen.easyid3 import EasyID3
+ from mutagen import File as MutagenFile
+ 
++
++def env_path(var_name, default):
++    """Return an expanded path from an environment override if present."""
++    value = os.environ.get(var_name)
++    if value:
++        return os.path.expanduser(value)
++    return default
++
++
++def env_value(var_name, default):
++    """Return an environment override value (non-path)."""
++    return os.environ.get(var_name, default)
++
+ # === USER CONFIG ===
+-PLAYLIST_DIR   = "/home/woo/LofiStream/Sounds"
+-VIDEO_FILE     = "/home/woo/LofiStream/Videos/Lofi3.mp4"
+-BRAND_IMAGE    = "/home/woo/LofiStream/Logo/LoFiLogo700.png"
+-YOUTUBE_URL    = "rtmp://a.rtmp.youtube.com/live2/1824-q94y-xac0-zjru-7z04"
++PLAYLIST_DIR   = env_path("LOFI_PLAYLIST_DIR", "/home/woo/LofiStream/Sounds")
++VIDEO_FILE     = env_path("LOFI_VIDEO_FILE", "/home/woo/LofiStream/Videos/Lofi3.mp4")
++BRAND_IMAGE    = env_path("LOFI_BRAND_IMAGE", "/home/woo/LofiStream/Logo/LoFiLogo700.png")
++YOUTUBE_URL    = env_value("LOFI_YOUTUBE_URL", "rtmp://a.rtmp.youtube.com/live2/1824-q94y-xac0-zjru-7z04")
+ 
+-TRACK_FILE     = "/tmp/current_track.txt"
+-PLAYLIST_FILE  = "/tmp/lofi_playlist.txt"
+-FONT_PATH      = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
++TRACK_FILE     = env_path("LOFI_TRACK_FILE", "/tmp/current_track.txt")
++PLAYLIST_FILE  = env_path("LOFI_PLAYLIST_FILE", "/tmp/lofi_playlist.txt")
++FONT_PATH      = env_path("LOFI_FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+ 
+-CHECK_HOST     = "a.rtmp.youtube.com"
+-CHECK_PORT     = 1935
++CHECK_HOST     = env_value("LOFI_CHECK_HOST", "a.rtmp.youtube.com")
++CHECK_PORT     = int(env_value("LOFI_CHECK_PORT", "1935"))
+ 
+ # ============================================================================
+ # NETWORK WATCHDOG
+ # ============================================================================
+ 
+ def wait_for_network():
+     print("🌐 Checking network connectivity to RTMP host...")
+     while True:
+         try:
+             socket.create_connection((CHECK_HOST, CHECK_PORT), timeout=5)
+             print("✅ Network online — starting / continuing stream.")
+             return
+         except OSError:
+             print("⚠️ RTMP host unreachable — retrying in 5 seconds...")
+             time.sleep(5)
+ 
+ # ============================================================================
+ # FILE HELPERS
+ # ============================================================================
+ 
+ def require_file(path, description):
+     if not os.path.isfile(path):
+         raise FileNotFoundError(f"{description} not found: {path}")
+ 
+ def get_audio_tracks(directory):
 
-# -------------------------------------------------------
-
-def load_stream_url():
-    if STREAM_URL_FILE.exists():
-        return STREAM_URL_FILE.read_text().strip()
-    print("❌ No stream_url.txt found!")
-    return ""
-
-def load_tracks():
-    if not PLAYLIST_DIR.exists():
-        print("❌ Sounds folder missing:", PLAYLIST_DIR)
-        return []
-    tracks = [t for t in PLAYLIST_DIR.iterdir() if t.suffix.lower() in [".mp3", ".wav"]]
-    print(f"🎶 Loaded {len(tracks)} tracks from playlist directory.")
-    return tracks
-
-def check_network():
-    print("🌐 Checking network connectivity to RTMP host...")
-    result = subprocess.run(["ping", "-c", "1", "8.8.8.8"], stdout=subprocess.DEVNULL)
-    if result.returncode == 0:
-        print("✅ Network online — starting / continuing stream.")
-        return True
-    print("❌ Network offline — waiting...")
-    return False
-
-def start_stream(track, stream_url):
-    print(f"🎧 Now playing: {track.name}")
-
-    # Build FFmpeg command
-    cmd = [
-        "ffmpeg",
-        "-re",
-        "-i", str(track),
-        "-loop", "1",
-        "-i", str(FFMPEG_LOGO),
-        "-filter_complex",
-        "scale=1280:720,format=yuv420p",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-b:v", "2500k",
-        "-c:a", "aac",
-        "-b:a", "160k",
-        "-f", "flv",
         stream_url
     ]
 
