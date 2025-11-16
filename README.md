@@ -2,7 +2,7 @@
 
 ## Overview
 
-Lofi Streamer is a fully automated Raspberry Pi–based streaming system designed to broadcast 24/7 lofi-style music and visuals to YouTube, Twitch, or any RTMP-compatible platform. It includes:
+Lofi Streamer is a fully automated Raspberry Pi–based streaming system designed to broadcast 24/7 lofi-style music and visuals to YouTube (not live cameras at this point), Twitch, or any RTMP-compatible platform. It includes:
 
 * **Independent background streamer service** powered by `lofi-streamer.py`
 * **A Flask-based dashboard** to monitor status, control playback, change stream settings, and manage the server
