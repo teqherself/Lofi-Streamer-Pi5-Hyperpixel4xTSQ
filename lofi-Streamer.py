@@ -250,7 +250,7 @@ def start_stream(track, stream_url, video_file, duration):
 
     video_args, video_ref = _video_input_args(video_file)
 
-    cmd = [
+        cmd = [
         "ffmpeg","-hide_banner","-loglevel","error",
         *video_args, "-i", str(track)
     ]
@@ -274,20 +274,20 @@ def start_stream(track, stream_url, video_file, duration):
 
 # ---------------- MAIN LOOP ----------------
 
-def main():
+def main() -> int:
     print("🌙 LOFI STREAMER v7.3 — Bottom-Hugging Text + Cinematic Bar\n")
 
     stream_url = load_stream_url()
     if not stream_url:
         print("❌ Missing RTMP URL!")
-        return
+        return 1
 
     wait_for_pi_ready()
-        
+
     tracks = load_tracks()
     if not tracks:
         print("❌ No tracks found!")
-        return
+        return 1
 
     video_file = load_video_file()
 
@@ -309,6 +309,7 @@ def main():
             except subprocess.TimeoutExpired:
                 p.kill()
 
-if __name__ == "__main__":
-    main()
+    return 0
 
+if __name__ == "__main__":
+    raise SystemExit(main())
