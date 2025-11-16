@@ -72,6 +72,7 @@ CHECK_HOST = os.environ.get("LOFI_CHECK_HOST", "a.rtmp.youtube.com")
 CHECK_PORT = _env_int("LOFI_CHECK_PORT", 1935)
 
 SKIP_NETWORK_CHECK = _env_bool("LOFI_SKIP_NETWORK_CHECK")
+SKIP_PI_READY_WAIT = _env_bool("LOFI_SKIP_READY_WAIT")
 
 # ---------------- BOOT WAIT ----------------
 
@@ -97,15 +98,7 @@ def wait_for_pi_ready():
         yr = int(subprocess.check_output(["date","+%Y"]).decode().strip())
         if yr >= 2023:
             print("⏱ Time synced")
-            break
-        print("⏳ Waiting for NTP…")
-        time.sleep(2)
-
-    print("✅ Pi Ready!\n")
-
-# ---------------- TRACK FILTER ----------------
-
-def _is_valid_audio(t: Path) -> bool:
+@@ -109,206 +110,222 @@ def _is_valid_audio(t: Path) -> bool:
     lower = t.name.lower()
     if lower.startswith("._"): return False
     if lower.startswith("."): return False
@@ -300,7 +293,10 @@ def main() -> int:
     video_file = load_video_file()
     logo_file = load_logo_file()
 
-    wait_for_pi_ready()
+    if SKIP_PI_READY_WAIT:
+        print("⚡️ Skipping Pi readiness wait (LOFI_SKIP_READY_WAIT=1).")
+    else:
+        wait_for_pi_ready()
 
     for t in _playlist_iterator(tracks):
 
