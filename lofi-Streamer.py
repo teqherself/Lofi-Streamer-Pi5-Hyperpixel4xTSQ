@@ -8,32 +8,27 @@ from pathlib import Path
 from typing import Iterable, Iterator, List, Optional
 
 # -------------------------------------------------------
-#  LOFI STREAMER v3.0 — GENDEMIK DIGITAL
-#  Self-contained file: NO absolute /home/woo/ paths
+#  LOFI STREAMER v3.1 — GENDEMIK DIGITAL
+#  Updated to ignore macOS junk files (._*, .DS_Store)
 # -------------------------------------------------------
 
 def _detect_base_dir() -> Path:
     """Return the root project directory regardless of install layout."""
-
     base = Path(__file__).resolve().parent
-    # When the file lives in LofiStream/Servers/ we need to pop one level up.
     if base.name.lower() == "servers":
         return base.parent
     return base
 
-
 BASE_DIR = _detect_base_dir()
 
+# -------------------------------------------------------
 
 def _env_path(name: str, default: Path) -> Path:
-    """Read a path from the environment while keeping defaults as Path objects."""
-
     raw_path = Path(os.environ.get(name, str(default))).expanduser()
     try:
         return raw_path.resolve(strict=False)
     except FileNotFoundError:
         return raw_path
-
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
@@ -45,13 +40,13 @@ def _env_int(name: str, default: int) -> int:
         print(f"⚠️ Invalid integer for {name!s}: {raw!r} — using {default}.")
         return default
 
-
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name)
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
+# -------------------------------------------------------
 
 PLAYLIST_DIR = _env_path("LOFI_PLAYLIST_DIR", BASE_DIR / "Sounds")
 LOGO_DIR = _env_path("LOFI_BRAND_DIR", BASE_DIR / "Logo")
@@ -83,25 +78,44 @@ def load_stream_url():
     print("❌ No stream URL configured! Set LOFI_YOUTUBE_URL or create stream_url.txt.")
     return ""
 
+# -------------------------------------------------------
+#   PATCHED: JUNK FILE IGNORING
+# -------------------------------------------------------
+
+JUNK_PREFIXES = ("._",)
+JUNK_FILES = {".ds_store", "thumbs.db"}
+
+def _is_valid_audio(track: Path) -> bool:
+    """Reject macOS metadata and any hidden/system files."""
+    name = track.name.lower()
+
+    if track.name.startswith(JUNK_PREFIXES):
+        return False
+    if name in JUNK_FILES:
+        return False
+    if name.startswith("."):
+        return False
+
+    return track.suffix.lower() in [".mp3", ".wav", ".m4a", ".flac"]
+
 def load_tracks() -> List[Path]:
     if not PLAYLIST_DIR.exists():
         print("❌ Sounds folder missing:", PLAYLIST_DIR)
         return []
 
     tracks = [
-        t
-        for t in PLAYLIST_DIR.iterdir()
-        if t.is_file() and t.suffix.lower() in [".mp3", ".wav", ".m4a", ".flac"]
+        t for t in PLAYLIST_DIR.iterdir()
+        if t.is_file() and _is_valid_audio(t)
     ]
 
-    print(f"🎶 Loaded {len(tracks)} tracks from playlist directory {PLAYLIST_DIR}.")
+    print(f"🎶 Loaded {len(tracks)} clean tracks from playlist directory {PLAYLIST_DIR}.")
     return tracks
 
+# -------------------------------------------------------
 
 def load_video_file():
     if VIDEO_FILE.exists():
         return VIDEO_FILE
-
     print("⚠️ Video file not found at", VIDEO_FILE)
     return None
 
@@ -117,51 +131,44 @@ def check_network():
             return True
     except OSError:
         pass
-
     print("❌ Network offline or RTMP host unreachable — waiting...")
     return False
+
+# -------------------------------------------------------
 
 def _video_input_args(video_file: Optional[Path]):
     if video_file and video_file.exists():
         return ["-stream_loop", "-1", "-re", "-i", str(video_file)], "[0:v]"
 
-    # Fall back to a generated black background if no video file is available.
     fallback = f"color=c={FALLBACK_COLOR}:s={FALLBACK_SIZE}:r={FALLBACK_FPS}"
     return ["-f", "lavfi", "-re", "-i", fallback], "[0:v]"
-
 
 def _logo_overlay_filter(video_ref: str) -> str:
     if not FFMPEG_LOGO.exists():
         print("⚠️ Logo image not found, streaming without overlay.")
         return f"{video_ref}scale=1280:720,format=yuv420p[v0]"
-
     pad = LOGO_PADDING
     return (
         f"{video_ref}scale=1280:720,format=yuv420p[v0];"
         f"[v0][2:v]overlay=W-w-{pad}:H-h-{pad}[vout]"
     )
 
-
 def _playlist_cycle(tracks: Iterable[Path]) -> Iterator[Path]:
     ordered = list(tracks)
     if not ordered:
         return iter(())
-
     def generator():
         while True:
             random.shuffle(ordered)
             for track in ordered:
                 yield track
-
     return generator()
 
+# -------------------------------------------------------
 
 def _track_duration(track: Path) -> int:
-    """Return track length in seconds (fallback to 180)."""
-
     try:
-        import mutagen  # type: ignore
-
+        import mutagen
         audio = mutagen.File(track)
         if audio and audio.info and getattr(audio.info, "length", None):
             return max(10, int(audio.info.length))
@@ -170,19 +177,9 @@ def _track_duration(track: Path) -> int:
 
     try:
         result = subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "default=noprint_wrappers=1:nokey=1",
-                str(track),
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(track)],
+            capture_output=True, text=True, check=True,
         )
         seconds = float(result.stdout.strip())
         if seconds > 0:
@@ -192,31 +189,28 @@ def _track_duration(track: Path) -> int:
 
     return 180
 
+# -------------------------------------------------------
 
 def _wait_for_track(process: subprocess.Popen, duration: int):
-    """Wait for ffmpeg to end naturally, but kill it if it overruns."""
-
     timeout = max(1, duration + max(0, TRACK_EXIT_BUFFER))
     start = time.time()
     try:
         process.wait(timeout=timeout)
         elapsed = time.time() - start
         if process.returncode == 0:
-            print(f"ℹ️ FFmpeg exited on its own after {elapsed:.1f}s (track complete).")
+            print(f"ℹ️ FFmpeg exited normally after {elapsed:.1f}s.")
         else:
-            print(
-                f"⚠️ FFmpeg exited early with code {process.returncode} after {elapsed:.1f}s."
-            )
+            print(f"⚠️ FFmpeg exited early with code {process.returncode} at {elapsed:.1f}s.")
     except subprocess.TimeoutExpired:
-        print("⚠️ FFmpeg still running after track ended — terminating.")
+        print("⚠️ FFmpeg hung — terminating.")
         process.terminate()
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
             process.kill()
-        else:
-            print("✅ FFmpeg terminated after manual stop.")
+        print("✅ FFmpeg terminated.")
 
+# -------------------------------------------------------
 
 def start_stream(track, stream_url, video_file, duration):
     print(f"🎧 Now playing: {track.name} ({duration}s)")
@@ -225,11 +219,9 @@ def start_stream(track, stream_url, video_file, duration):
     cmd = [
         "ffmpeg",
         "-hide_banner",
-        "-loglevel",
-        "error",
+        "-loglevel", "error",
         *video_args,
-        "-i",
-        str(track),
+        "-i", str(track),
     ]
 
     filter_chain = f"{video_ref}scale=1280:720,format=yuv420p[v0]"
@@ -239,28 +231,18 @@ def start_stream(track, stream_url, video_file, duration):
         cmd += ["-loop", "1", "-i", str(FFMPEG_LOGO)]
         filter_chain = _logo_overlay_filter(video_ref)
         map_args = ["-map", "[vout]", "-map", "1:a"]
-    else:
-        print("⚠️ Logo image not found, streaming without overlay.")
 
     cmd += [
-        "-filter_complex",
-        filter_chain,
+        "-filter_complex", filter_chain,
         *map_args,
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-b:v",
-        "2500k",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "160k",
-        "-pix_fmt",
-        "yuv420p",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-b:v", "2500k",
+        "-c:a", "aac",
+        "-b:a", "160k",
+        "-pix_fmt", "yuv420p",
         "-shortest",
-        "-f",
-        "flv",
+        "-f", "flv",
         stream_url,
     ]
 
@@ -269,20 +251,19 @@ def start_stream(track, stream_url, video_file, duration):
 # -------------------------------------------------------
 
 def main():
-    print("🌙 LOFI STREAMER v3.0 — GENDEMIK DIGITAL\n")
+    print("🌙 LOFI STREAMER v3.1 — GENDEMIK DIGITAL\n")
 
     stream_url = load_stream_url()
-    if stream_url == "":
-        print("❌ Missing RTMP stream URL. Add it to stream_url.txt!")
+    if not stream_url:
+        print("❌ Missing RTMP stream URL.")
         return
 
     tracks = load_tracks()
     if not tracks:
-        print("❌ No audio tracks found! Add MP3s to the Sounds/ folder.")
+        print("❌ No audio tracks found!")
         return
 
     video_file = load_video_file()
-
     playlist = _playlist_cycle(tracks)
 
     for track in playlist:
