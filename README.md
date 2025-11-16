@@ -60,31 +60,87 @@ LofiStream/
 * Monitors the lofi service via logs and heartbeat
 
 ---
+diff --git a/README.md b/README.md
+index 68b867866ec9496460e9d782dfd08142495b4b09..2cf21244eacadad2de8c093a5a2623ee9ea3b47f 100644
+--- a/README.md
++++ b/README.md
+@@ -39,50 +39,79 @@ LofiStream/
+ 
+ ## ✔️ Features
+ 
+ ### Lofi Streamer Core (lofi-streamer.py)
+ 
+ * Auto‑loads all `.mp3` files from the Sounds folder
+ * Random shuffle playback with auto‑next-track switching
+ * Reads video file from `Videos/` (e.g., loopable MP4 artwork)
+ * Keeps the stream online using ffmpeg
+ * Crash recovery: automatically restarts ffmpeg if connection drops
+ * Logs activity and "Now Playing" output
+ * Checks network connectivity before attempting stream
+ * Displays friendly terminal output with status icons
+ 
+ ### Dashboard
+ 
+ * Browser-based interface (Flask)
+ * Shows current track, uptime, stream health
+ * Allows start/stop/restart of the streamer service
+ * Lets you change RTMP URL + Stream Key live
+ * Lets you update or switch video background
+ * Monitors the lofi service via logs and heartbeat
+ 
+ ---
+ 
+## ⚙️ Runtime Overrides
 
-## 🔧 Installation
+`lofi-streamer.py` ships with sensible defaults for a Raspberry Pi install, but
+every file path and connection target can be overridden at runtime using
+environment variables. This makes it easy to test locally or run on a different
+user account without editing the script.
 
-### 1. Install dependencies
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `LOFI_PLAYLIST_DIR` | `/home/woo/LofiStream/Sounds` | Directory scanned for audio tracks |
+| `LOFI_VIDEO_FILE` | `/home/woo/LofiStream/Videos/Lofi3.mp4` | Looping background video |
+| `LOFI_BRAND_IMAGE` | `/home/woo/LofiStream/Logo/LoFiLogo700.png` | Overlay PNG logo |
+| `LOFI_YOUTUBE_URL` | `rtmp://a.rtmp.youtube.com/live2/...` | Destination RTMP endpoint |
+| `LOFI_TRACK_FILE` | `/tmp/current_track.txt` | Temporary file used by `drawtext` |
+| `LOFI_PLAYLIST_FILE` | `/tmp/lofi_playlist.txt` | Generated concat file for audio |
+| `LOFI_FONT_PATH` | `/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf` | Font used for track overlay |
+| `LOFI_CHECK_HOST` | `a.rtmp.youtube.com` | Host probed before streaming |
+| `LOFI_CHECK_PORT` | `1935` | TCP port probed before streaming |
+
++Example usage:
 
 ```bash
-sudo apt update
-sudo apt install -y python3 python3-pip ffmpeg
-pip3 install flask
+export LOFI_PLAYLIST_DIR="$HOME/Music/Lofi"
+export LOFI_YOUTUBE_URL="rtmp://b.rtmp.youtube.com/live2/test-key"
+python3 lofi-Streamer.py
 ```
 
-### 2. Ensure folder layout exists
-
-```bash
-mkdir -p ~/LofiStream/{Sounds,Videos,Servers,Dashboard,Logo}
-```
-
-### 3. Place your project files
-
-* Audio → `Sounds/`
-* Video loops → `Videos/`
-* Python streamer → `Servers/lofi-streamer.py`
-* Dashboard Flask app → `Dashboard/dashboard.py`
-
-### 4. Test run manually
+ ## 🔧 Installation
+ 
+ ### 1. Install dependencies
+ 
+ ```bash
+ sudo apt update
+ sudo apt install -y python3 python3-pip ffmpeg
+ pip3 install flask
+ ```
+ 
+ ### 2. Ensure folder layout exists
+ 
+ ```bash
+ mkdir -p ~/LofiStream/{Sounds,Videos,Servers,Dashboard,Logo}
+ ```
+ 
+ ### 3. Place your project files
+ 
+ * Audio → `Sounds/`
+ * Video loops → `Videos/`
+ * Python streamer → `Servers/lofi-streamer.py`
+ * Dashboard Flask app → `Dashboard/dashboard.py`
+ 
+ ### 4. Test run manually
 
 ```bash
 python3 ~/LofiStream/Servers/lofi-streamer.py
