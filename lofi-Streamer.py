@@ -98,7 +98,7 @@ def wait_for_pi_ready():
         yr = int(subprocess.check_output(["date","+%Y"]).decode().strip())
         if yr >= 2023:
             print("⏱ Time synced")
-@@ -109,206 +110,222 @@ def _is_valid_audio(t: Path) -> bool:
+def _is_valid_audio(t: Path) -> bool:
     lower = t.name.lower()
     if lower.startswith("._"): return False
     if lower.startswith("."): return False
