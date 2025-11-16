@@ -68,13 +68,13 @@ user account without editing the script.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `LOFI_PLAYLIST_DIR` | `/home/woo/LofiStream/Sounds` | Directory scanned for audio tracks |
-| `LOFI_VIDEO_FILE` | `/home/woo/LofiStream/Videos/Lofi3.mp4` | Looping background video |
-| `LOFI_BRAND_IMAGE` | `/home/woo/LofiStream/Logo/LoFiLogo700.png` | Overlay PNG logo |
-| `LOFI_YOUTUBE_URL` | `rtmp://a.rtmp.youtube.com/live2/...` | Destination RTMP endpoint |
-| `LOFI_TRACK_FILE` | `/tmp/current_track.txt` | Temporary file used by `drawtext` |
-| `LOFI_PLAYLIST_FILE` | `/tmp/lofi_playlist.txt` | Generated concat file for audio |
-| `LOFI_FONT_PATH` | `/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf` | Font used for track overlay |
+| `LOFI_PLAYLIST_DIR` | `<project>/Sounds` | Directory scanned for audio tracks |
+| `LOFI_VIDEO_FILE` | `<project>/Videos/Lofi3.mp4` | Looping background video file |
+| `LOFI_BRAND_IMAGE` | `<project>/Logo/LoFiLogo700.png` | Overlay PNG logo |
+| `LOFI_VIDEO_DIR` | `<project>/Videos` | Base directory for video assets |
+| `LOFI_BRAND_DIR` | `<project>/Logo` | Base directory for brand assets |
+| `LOFI_STREAM_URL_FILE` | `<project>/stream_url.txt` | File fallback for the RTMP URL |
+| `LOFI_YOUTUBE_URL` | *(unset)* | Destination RTMP endpoint (overrides file) |
 | `LOFI_CHECK_HOST` | `a.rtmp.youtube.com` | Host probed before streaming |
 | `LOFI_CHECK_PORT` | `1935` | TCP port probed before streaming |
 
@@ -85,6 +85,9 @@ export LOFI_PLAYLIST_DIR="$HOME/Music/Lofi"
 export LOFI_YOUTUBE_URL="rtmp://b.rtmp.youtube.com/live2/test-key"
 python3 lofi-Streamer.py
 ```
+
+If the configured video file is missing, the streamer now falls back to a
+generated black 1280×720 canvas so that the RTMP output remains valid.
 
  ## 🔧 Installation
  
