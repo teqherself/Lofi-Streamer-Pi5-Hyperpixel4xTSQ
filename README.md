@@ -176,7 +176,7 @@ systemctl status lofi-streamer
 ### Version
 
 ```
-LOFI STREAMER v3.0 — GENDEMIK DIGITAL
+LOFI STREAMER — GENDEMIK DIGITAL
 ```
 
 ### Functional Breakdown
