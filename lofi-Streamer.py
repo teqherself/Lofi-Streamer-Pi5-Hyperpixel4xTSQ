@@ -5,7 +5,7 @@ import random
 import socket
 import subprocess
 from pathlib import Path
-from typing import Iterable, Iterator, List, Optional
+from typing import Iterator, List, Optional
 
 # -------------------------------------------------------
 #  LOFI STREAMER v4.1 — GENDEMIK DIGITAL
