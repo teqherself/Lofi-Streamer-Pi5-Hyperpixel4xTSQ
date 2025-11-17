@@ -1,344 +1,83 @@
-# 🌙 Lofi Streamer — Raspberry Pi Full Project - WORK IN PROGRESS - README
+# Installation Guide — Lofi Streamer Pi5 + HyperPixel 4" TSQ
 
-## Overview
-
-Lofi Streamer is a fully automated Raspberry Pi–based streaming system designed to broadcast 24/7 lofi-style music and visuals to YouTube (not live cameras at this point), Twitch, or any RTMP-compatible platform. It includes:
-
-* **Independent background streamer service** powered by `lofi-streamer.py`
-* **A Flask-based dashboard** to monitor status, control playback, change stream settings, and manage the server
-* **A stable RTMP ffmpeg pipeline** to push your chosen audio + video to your RTMP endpoint
-* **Crash‑resistant behaviour** — dashboard and stream server are isolated so if one crashes the other continues
-* **Autostart systemd support** for streaming and dashboard components
-
-This README documents the full architecture, install process, folder layout, and detailed specifications of `lofi-streamer.py`.
-
-### USE - STANDALONE SERVER (lofi-streamer.py) 
-
-This file is working fine and currently in use on my own server ;)
+This guide explains how to deploy the automated **Lofi Streamer** service on a Raspberry Pi using the bundled `Install-lofi-streamer.sh` script. Follow these steps from a fresh Raspberry Pi OS (64-bit) install connected to the internet.
 
 ---
-
-## 📁 Project Structure
-
-```
-LofiStream/
- ├── Dashboard/
- │    ├── dashboard.py
- │    ├── static/style.css
- │    └── templates/index.html
- ├── Servers/
- │    └── lofi-streamer.py
- ├── Videos/
- │    └── (background mp4 loops)
- ├── Sounds/
- │    └── (mp3 playlist files)
- ├── Logo/
- │    ├── LoFiLogo500.png
- │    └── LoFiLogo700.png
- ├── start-kiosk.sh
- └── README.md (this file)
-```
+## 1. Prep the Pi
+1. Update the system packages and install git.
+   ```bash
+   sudo apt update && sudo apt install -y git
+   ```
+2. Clone this repository or copy `Install-lofi-streamer.sh` onto the Pi (e.g., via `scp`).
 
 ---
+## 2. Review script defaults
+The installer assumes a dedicated user account:
 
-## ✔️ Features
-
-### Lofi Streamer Core - STANDALONE SERVER (lofi-streamer.py) 
-
-* Auto‑loads all `.mp3` files from the Sounds folder
-* Random shuffle playback with auto‑next-track switching
-* Reads video file from `Videos/` (e.g., loopable MP4 artwork)
-* Keeps the stream online using ffmpeg
-* Crash recovery: automatically restarts ffmpeg if connection drops
-* Logs activity and "Now Playing" output
-* Checks network connectivity before attempting stream
-* Displays friendly terminal output with status icons
-
-### Dashboard - Ommited until rebuilt.
-
-* Browser-based interface (Flask)
-* Shows current track, uptime, stream health
-* Allows start/stop/restart of the streamer service
-* Lets you change RTMP URL + Stream Key live
-* Lets you update or switch video background
-* Monitors the lofi service via logs and heartbeat
- 
-## ⚙️ Runtime Overrides
-
-`lofi-streamer.py` ships with sensible defaults for a Raspberry Pi install, but
-every file path and connection target can be overridden at runtime using
-environment variables. This makes it easy to test locally or run on a different
-user account without editing the script.
-
-| Variable | Default | Purpose |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `LOFI_PLAYLIST_DIR` | `<project>/Sounds` | Directory scanned for audio tracks |
-| `LOFI_VIDEO_FILE` | `<project>/Videos/Lofi3.mp4` | Looping background video file |
-| `LOFI_BRAND_IMAGE` | `<project>/Logo/LoFiLogo700.png` | Overlay PNG logo |
-| `LOFI_VIDEO_DIR` | `<project>/Videos` | Base directory for video assets |
-| `LOFI_BRAND_DIR` | `<project>/Logo` | Base directory for brand assets |
-| `LOFI_STREAM_URL_FILE` | `<project>/stream_url.txt` | File fallback for the RTMP URL |
-| `LOFI_YOUTUBE_URL` | *(unset)* | Destination RTMP endpoint (overrides file) |
-| `LOFI_CHECK_HOST` | `a.rtmp.youtube.com` | Host probed before streaming |
-| `LOFI_CHECK_PORT` | `1935` | TCP port probed before streaming |
-| `LOFI_SKIP_NETWORK_CHECK` | *(unset)* | When set, skips the socket probe before each track |
-| `LOFI_SKIP_READY_WAIT` | *(unset)* | When set, bypasses the Raspberry Pi readiness wait |
+| `USER_NAME` | `woo` | Account that will own/run the streamer |
+| `USER_HOME` | `/home/$USER_NAME` | Home directory for the service files |
+| `TARGET_DIR` | `$USER_HOME/LofiStream` | Installation root |
+| `REPO_URL` | `https://github.com/teqherself/Lofi-Streamer-Pi5-Hyperpixel4xTSQ.git` | Source repo |
+| `SERVICE_NAME` | `lofi-streamer.service` | systemd unit name |
+| `VENV_DIR` | `$TARGET_DIR/venv` | Python virtualenv location |
+| `PY_SCRIPT` | `$TARGET_DIR/lofi-streamer.py` | Streamer entry point |
 
-+Example usage:
+Adjust the `USER_NAME` (and optionally paths) inside the script if your Pi uses a different account.
 
+---
+## 3. Run the installer
+1. Make the script executable:
+   ```bash
+   chmod +x Install-lofi-streamer.sh
+   ```
+2. Execute with sudo so it can install packages and configure systemd:
+   ```bash
+   sudo ./Install-lofi-streamer.sh
+   ```
+
+The script performs the following actions:
+- Installs required packages (`ffmpeg`, Python 3, venv tooling, git)
+- Clones or updates the repo into `$TARGET_DIR`
+- Creates a Python virtual environment and installs `mutagen`
+- Fixes ownership/permissions so the target user controls the files
+- Creates `/etc/systemd/system/lofi-streamer.service`
+- Enables and starts the service so it launches on boot
+
+---
+## 4. Verify the service
+Check that the streamer started successfully:
 ```bash
-export LOFI_PLAYLIST_DIR="$HOME/Music/Lofi"
-export LOFI_YOUTUBE_URL="rtmp://b.rtmp.youtube.com/live2/test-key"
-python3 lofi-streamer.py
+sudo systemctl status lofi-streamer.service
 ```
-
-If the configured video file is missing, the streamer now falls back to a
-generated black 1280×720 canvas so that the RTMP output remains valid.  For
-quick local iteration, set `LOFI_SKIP_READY_WAIT=1` to bypass the usual boot
-checks (network ping, DNS, NTP) that you already know are satisfied.
-
- ## 🔧 Installation
- 
- ### 1. Install dependencies
- 
- ```bash
- sudo apt update
- sudo apt install -y python3 python3-pip ffmpeg
- pip3 install flask
- ```
- 
- ### 2. Ensure folder layout exists
- 
- ```bash
- mkdir -p ~/LofiStream/{Sounds,Videos,Servers,Dashboard,Logo}
- ```
- 
- ### 3. Place your project files
- 
- * Audio → `Sounds/`
- * Video loops → `Videos/`
- * Python streamer → `Servers/lofi-streamer.py`
- * Dashboard Flask app → `Dashboard/dashboard.py`
- 
- ### 4. Test run manually
-
+Follow the logs live:
 ```bash
-python3 ~/LofiStream/Servers/lofi-streamer.py
+sudo journalctl -fu lofi-streamer.service
 ```
-
-You should see something like:
-
-```
-🌙 LOFI STREAMER — GENDEMIK DIGITAL RC 0.4
-🌐 Checking network connectivity to RTMP host...
-🎶 Loaded 71 tracks from playlist directory.
-📡 Starting YouTube stream via ffmpeg...
-🎧 Now playing: ExampleTrack.mp3 (180s)
-```
-
----
-
-## 🔥 Systemd Autostart
-
-Create service file:
-
-```
-sudo nano /etc/systemd/system/lofi-streamer.service
-```
-
-Example service:
-
-```
-[Unit]
-Description=Lofi Streamer (GendemiK Digital)
-After=network-online.target
-
-[Service]
-ExecStart=/usr/bin/python3 /home/woo/LofiStream/Servers/lofi-streamer.py
-WorkingDirectory=/home/woo/LofiStream/Servers
-Restart=always
-User=woo
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable + start:
-
+If you need to restart or stop the service:
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable lofi-streamer
-sudo systemctl start lofi-streamer
-```
-
-Check status:
-
-```bash
-systemctl status lofi-streamer
+sudo systemctl restart lofi-streamer.service
+sudo systemctl stop lofi-streamer.service
 ```
 
 ---
+## 5. Customize your content
+After installation, your project files live in `$HOME/LofiStream`. Populate the directories used by `lofi-streamer.py`:
+- `Sounds/` — MP3 playlist
+- `Videos/` — Looping MP4 background
+- `Logo/` — Overlay graphics
 
-## 🧠 Detailed lofi-streamer.py Specs
-
-### Version
-
-```
-LOFI STREAMER — GENDEMIK DIGITAL
-```
-
-### Functional Breakdown
-
-#### ✔ Network Check
-
-* Pings the RTMP server host
-* Retries until the network is online
-* Prevents ffmpeg from starting if no Internet
-
-#### ✔ Playlist Loader
-
-* Scans `~/LofiStream/Sounds/` for `.mp3`
-* Skips malformed or zero-byte files
-* Builds internal playlist list
-
-#### ✔ Random Track Sequencing
-
-* Randomises track order on start
-* Moves sequentially through tracks
-* Auto‑loops playlist at end
-
-#### ✔ Audio Playback Timing
-
-* Automatically reads duration metadata via ffprobe
-* Sleeps until track end
-* Immediately switches to next track
-
-#### ✔ FFmpeg Stream Pipeline
-
-The module generates a command similar to:
-
-```
-ffmpeg -re -stream_loop -1 -i video.mp4 -i current_track.mp3 \
-  -c:v libx264 -preset veryfast -b:v 4500k -c:a aac -b:a 160k \
-  -pix_fmt yuv420p -f flv rtmp://<server>/<key>
-```
-
-#### ✔ Crash Protection
-
-* If ffmpeg dies → restart it
-* If a track fails → skip it
-* If RTMP server disconnects → retry
-
-#### ✔ Logging
-
-Creates or updates:
-
-```
-~/LofiStream/Servers/lofi-stream.log
-```
-
-Log includes:
-
-* Timestamps
-* Track names
-* Stream errors
-* Restart events
-
-#### ✔ Terminal Output
-
-Examples:
-
-```
-🎧 Now playing: ._Muted - Belonging.mp3 (180s)
-📡 Stream online via ffmpeg
-❗ Lost connection — attempting restart...
-```
+Restart the service after making major changes so it reloads assets.
 
 ---
-
-## 🌐 Dashboard API Integration
-
-The dashboard communicates using:
-
-* `/status` — Get current track + streamer state
-* `/start` — Start systemd streamer
-* `/stop` — Stop systemd streamer
-* `/restart` — Restart streamer
-* `/set_rtmp` — Update stream URL/key
-* `/logs` — Live log tail
-
-Dashboard does **not** run inside the same process as the streamer. Isolation ensures reliability.
+## 6. Updating later
+To pull the latest code, rerun the installer or manually `git pull` inside `$TARGET_DIR`. The script is idempotent: it will update the repo, refresh the virtualenv, and restart the service when executed again.
 
 ---
+## Troubleshooting tips
+- Ensure the specified user exists and can access `/home/$USER_NAME`.
+- Confirm your RTMP destination (YouTube, Twitch, etc.) is reachable from the Pi network.
+- Use the environment variables documented in `README.md` to override audio/video directories or RTMP endpoints without editing the script.
 
-## 🚀 Start Dashboard
-
-```bash
-python3 ~/LofiStream/Dashboard/dashboard.py
-```
-
-Access in browser:
-
-```
-http://<pi-address>:5000
-```
-
----
-
-## 🟦 Kiosk Mode (optional)
-
-If using a HyperPixel or touchscreen:
-
-```bash
-~/LofiStream/start-kiosk.sh
-```
-
-This launches Chromium in kiosk fullscreen showing the dashboard.
-
----
-
-## 🎵 Adding Your Own Lofi Playlist
-
-Drop any `.mp3` file into:
-
-```
-~/LofiStream/Sounds/
-```
-
-The streamer detects them automatically on next restart.
-
----
-
-## 🎞 Adding New Background Videos
-
-Place `.mp4` loop files into:
-
-```
-~/LofiStream/Videos/
-```
-
-The dashboard can be extended to switch videos on the fly.
-
----
-
-## 🧩 Future Planned Features
-
-* Web‑based playlist editor
-* Real‑time audio spectrum overlays
-* Animated lofi character loop generator
-* Stream quality presets selector
-* Remote control app (mobile)
-
----
-
-## 👤 Author
-
-**Ms. Stevie Woo (GendemiK Digital/Teqherself)**
-
-Custom Raspberry Pi pipelines, creative streaming tools, and lofi engineering magic.
-
----
-
-## 📜 Licence
-
-MIT License — Free to use, modify, improve.
+Enjoy your always-on lofi stream! 🌙
