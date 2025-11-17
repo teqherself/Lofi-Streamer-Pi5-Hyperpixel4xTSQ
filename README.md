@@ -51,7 +51,44 @@ The script performs the following actions:
 - Enables and starts the service so it launches on boot
 
 ---
-## 4. Verify the service
+## 4. Understand or recreate the systemd service
+The installer writes the service file shown below to `/etc/systemd/system/lofi-streamer.service`. Use these instructions if you
+need to customize the service manually (for example, to change `ExecStart` or tweak restart behavior):
+
+```ini
+[Unit]
+Description=GENDEMIK DIGITAL - Lofi Streamer
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+User=<USER_NAME>
+WorkingDirectory=<TARGET_DIR>
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=<VENV_DIR>/bin/python3 <TARGET_DIR>/lofi-streamer.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Manual setup steps (if you are not running the script):
+1. Copy the snippet above into `/etc/systemd/system/lofi-streamer.service`, replacing the placeholder paths with your actual
+   values.
+2. Reload systemd so it sees the new unit:
+   ```bash
+   sudo systemctl daemon-reload
+   ```
+3. Enable the unit so it starts on boot, then start it immediately:
+   ```bash
+   sudo systemctl enable lofi-streamer.service
+   sudo systemctl start lofi-streamer.service
+   ```
+4. Confirm it is running (see the next section for verification commands).
+
+---
+## 5. Verify the service
 Check that the streamer started successfully:
 ```bash
 sudo systemctl status lofi-streamer.service
@@ -67,7 +104,7 @@ sudo systemctl stop lofi-streamer.service
 ```
 
 ---
-## 5. Customize your content
+## 6. Customize your content
 After installation, your project files live in `$HOME/LofiStream`. Populate the directories used by `lofi-streamer.py`:
 - `Sounds/` — MP3 playlist
 - `Videos/` — Looping MP4 background
@@ -76,7 +113,7 @@ After installation, your project files live in `$HOME/LofiStream`. Populate the 
 Restart the service after making major changes so it reloads assets.
 
 ---
-## 6. Updating later
+## 7. Updating later
 To pull the latest code, rerun the installer or manually `git pull` inside `$TARGET_DIR`. The script is idempotent: it will update the repo, refresh the virtualenv, and restart the service when executed again.
 
 ---
