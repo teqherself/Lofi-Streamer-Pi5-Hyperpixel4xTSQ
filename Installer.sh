@@ -1,104 +1,119 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -e
 
-echo "🌙 GENDEMIK DIGITAL — LOFI STREAMER INSTALLER"
-echo "----------------------------------------------"
-sleep 1
+echo "🌙 Lofi Streamer Installer — Pi 5 + HyperPixel 4.0 Square"
+echo "----------------------------------------------------------"
 
-# ---------- VARIABLES ----------
-PROJECT_DIR="/home/$USER/LofiStream"
-SERVERS_DIR="$PROJECT_DIR/Servers"
-SOUNDS_DIR="$PROJECT_DIR/Sounds"
-VIDEOS_DIR="$PROJECT_DIR/Videos"
-LOGO_DIR="$PROJECT_DIR/Logo"
-
+# --- VARIABLES ---
+USER_NAME="woo"
+HOME_DIR="/home/$USER_NAME"
+BASE_DIR="$HOME_DIR/LofiStream"
+VENV_DIR="$BASE_DIR/venv"
 SERVICE_FILE="/etc/systemd/system/lofi-streamer.service"
+REPO_URL="https://github.com/teqherself/Lofi-Streamer-Pi5-Hyperpixel4xTSQ.git"
 
-REPO_URL="https://raw.githubusercontent.com/teqherself/Lofi-Streamer-Pi5-Hyperpixel4xTSQ/main"
+# --- CHECK USER ---
+if [ "$(whoami)" != "root" ]; then
+    echo "❌ Please run with sudo:"
+    echo "   sudo ./install-lofi-streamer.sh"
+    exit 1
+fi
 
-# ---------- UPDATE SYSTEM ----------
-echo "🔄 Updating system packages..."
-sudo apt update -y
-sudo apt upgrade -y
+# --- UPDATE SYSTEM ---
+echo "📦 Updating system..."
+apt update -y
+apt upgrade -y
 
-# ---------- INSTALL DEPENDENCIES ----------
+# --- INSTALL DEPENDENCIES ---
 echo "📦 Installing dependencies..."
-sudo apt install -y \
-    ffmpeg \
-    python3 \
-    python3-pip \
-    python3-venv \
-    python3-mutagen \
-    fonts-dejavu-core
+apt install -y python3 python3-pip python3-venv ffmpeg git
 
-# ---------- CREATE PROJECT STRUCTURE ----------
-echo "📁 Creating LofiStream folder structure..."
+# --- CREATE PROJECT FOLDER ---
+echo "📁 Creating project directory: $BASE_DIR"
+mkdir -p "$BASE_DIR"
 
-mkdir -p "$SERVERS_DIR"
-mkdir -p "$SOUNDS_DIR"
-mkdir -p "$VIDEOS_DIR"
-mkdir -p "$LOGO_DIR"
-
-# ---------- DOWNLOAD MAIN SCRIPT ----------
-echo "⬇️ Downloading lofi-streamer.py..."
-curl -sSL "$REPO_URL/lofi-streamer.py" -o "$SERVERS_DIR/lofi-streamer.py"
-chmod +x "$SERVERS_DIR/lofi-streamer.py"
-
-# ---------- CREATE stream_url.txt IF MISSING ----------
-if [ ! -f "$PROJECT_DIR/stream_url.txt" ]; then
-    echo "📄 Creating stream_url.txt (blank)…"
-    echo "" > "$PROJECT_DIR/stream_url.txt"
+# --- CLONE GITHUB REPO ---
+echo "📥 Cloning Lofi Streamer repo..."
+if [ -d "$BASE_DIR/.git" ]; then
+    echo "🔄 Repo exists — pulling latest..."
+    git -C "$BASE_DIR" pull
+else
+    git clone "$REPO_URL" "$BASE_DIR"
 fi
 
-# ---------- OPTIONAL: PLACEHOLDER LOGO ----------
-if [ ! -f "$LOGO_DIR/LoFiLogo700.png" ]; then
-    echo "⚠️ No logo found. Adding placeholder..."
-    convert -size 700x200 xc:black "$LOGO_DIR/LoFiLogo700.png" 2>/dev/null || true
-fi
+# --- CREATE FOLDER STRUCTURE ---
+echo "📁 Ensuring required folders exist..."
+mkdir -p "$BASE_DIR/Sounds"
+mkdir -p "$BASE_DIR/Videos"
+mkdir -p "$BASE_DIR/Logo"
 
-# ---------- PYTHON VENV ----------
-echo "🐍 Creating Python venv..."
-python3 -m venv "$PROJECT_DIR/venv"
-source "$PROJECT_DIR/venv/bin/activate"
+# --- CREATE VENV ---
+echo "🐍 Creating Python virtual environment..."
+python3 -m venv "$VENV_DIR"
+source "$VENV_DIR/bin/activate"
 
-echo "📦 Installing Python requirements..."
-pip install --upgrade pip mutagen
+# --- INSTALL PYTHON PACKAGES ---
+echo "🐍 Installing Python libraries..."
+pip install --upgrade pip
+pip install mutagen
 
 deactivate
 
-# ---------- SYSTEMD SERVICE ----------
-echo "🛠 Creating systemd service: lofi-streamer.service"
+# --- CREATE STREAM URL FILE ---
+if [ ! -f "$BASE_DIR/stream_url.txt" ]; then
+    echo "📝 Creating stream_url.txt (empty)"
+    echo "" > "$BASE_DIR/stream_url.txt"
+fi
 
-sudo bash -c "cat > $SERVICE_FILE" <<EOF
+# --- FIX PERMISSIONS ---
+echo "🔧 Fixing permissions..."
+chown -R "$USER_NAME:$USER_NAME" "$BASE_DIR"
+
+# --- SYSTEMD SERVICE ---
+echo "⚙️ Creating systemd service: lofi-streamer.service"
+cat > "$SERVICE_FILE" <<EOF
 [Unit]
-Description=Gendemik Digital - Lofi Streamer
+Description=Lofi YouTube Streamer
 After=network-online.target
-Wants=network-online.target
 
 [Service]
-User=$USER
-WorkingDirectory=$PROJECT_DIR
-Environment=PYTHONUNBUFFERED=1
-ExecStart=$PROJECT_DIR/venv/bin/python3 $SERVERS_DIR/lofi-streamer.py
+Type=simple
+User=$USER_NAME
+WorkingDirectory=$BASE_DIR
+ExecStart=$VENV_DIR/bin/python3 $BASE_DIR/lofi-streamer.py
 Restart=always
 RestartSec=5
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable lofi-streamer
+# --- ENABLE SERVICE ---
+echo "🔧 Enabling service..."
+systemctl daemon-reload
+systemctl enable lofi-streamer.service
 
-echo "🎉 Installer complete!"
 echo ""
-echo "To START the streamer now:"
+echo "🎉 Installation complete!"
+echo "-----------------------------------------"
+echo "To start streaming now:"
 echo "   sudo systemctl start lofi-streamer"
 echo ""
-echo "To check logs:"
-echo "   journalctl -u lofi-streamer -f"
+echo "To check status:"
+echo "   systemctl status lofi-streamer"
 echo ""
-echo "⚙️ IMPORTANT: Edit your RTMP stream key at:"
-echo "   $PROJECT_DIR/stream_url.txt"
+echo "Add your YouTube RTMP URL to:"
+echo "   $BASE_DIR/stream_url.txt"
 echo ""
-echo "❤️ Gendemik Digital — Crafted for you, Stevie."
+echo "Add MP3 files to:"
+echo "   $BASE_DIR/Sounds"
+echo ""
+echo "Add your background video to:"
+echo "   $BASE_DIR/Videos/Lofi3.mp4"
+echo ""
+echo "Add your PNG logo to:"
+echo "   $BASE_DIR/Logo/LoFiLogo700.png"
+echo ""
+echo "🔥 You're ready to stream!"
+echo "-----------------------------------------"
