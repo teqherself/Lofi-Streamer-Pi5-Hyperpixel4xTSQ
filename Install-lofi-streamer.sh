@@ -27,7 +27,7 @@ mkdir -p "$SERVER_DIR" "$SOUNDS_DIR" "$LOGO_DIR" "$VIDEOS_DIR"
 # --- SYSTEM DEPENDENCIES ---
 echo "📦 Installing system dependencies..."
 sudo apt update && sudo apt upgrade
-sudo apt install -y ffmpeg python3 python3-venv python3-pip python3-mutagen wget
+sudo apt install -y ffmpeg python3 python3-venv python3-pip wget
 
 # --- PYTHON VENV ---
 echo "🐍 Creating virtual environment..."
@@ -35,7 +35,7 @@ python3 -m venv "$BASE_DIR/venv"
 source "$BASE_DIR/venv/bin/activate"
 
 pip install --upgrade pip
-pip install python3-mutagen
+pip install mutagen
 
 deactivate
 
