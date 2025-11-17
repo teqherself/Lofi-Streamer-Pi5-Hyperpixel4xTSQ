@@ -8,7 +8,12 @@ This guide explains how to deploy the automated **Lofi Streamer** service on a R
    ```bash
    sudo apt update && sudo apt install -y git
    ```
-2. Clone this repository or copy `Install-lofi-streamer.sh` onto the Pi (e.g., via `scp`).
+2. Obtain the installer script:
+   - **Option A:** Clone the repo for full access to all files.
+   - **Option B:** Download just the script directly from GitHub:
+     ```bash
+     wget https://raw.githubusercontent.com/teqherself/Lofi-Streamer-Pi5-Hyperpixel4xTSQ/main/Install-lofi-streamer.sh
+     ```
 
 ---
 ## 2. Review script defaults
