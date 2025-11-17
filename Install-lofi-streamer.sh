@@ -26,8 +26,8 @@ mkdir -p "$SERVER_DIR" "$SOUNDS_DIR" "$LOGO_DIR" "$VIDEOS_DIR"
 
 # --- SYSTEM DEPENDENCIES ---
 echo "📦 Installing system dependencies..."
-sudo apt update
-sudo apt install -y ffmpeg python3 python3-venv python3-pip mutagen wget
+sudo apt update && upgrade
+sudo apt install -y ffmpeg python3 python3-venv python3-pip python3-mutagen wget
 
 # --- PYTHON VENV ---
 echo "🐍 Creating virtual environment..."
