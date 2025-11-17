@@ -117,6 +117,22 @@ Restart the service after making major changes so it reloads assets.
 To pull the latest code, rerun the installer or manually `git pull` inside `$TARGET_DIR`. The script is idempotent: it will update the repo, refresh the virtualenv, and restart the service when executed again.
 
 ---
+## 8. Uninstall or clean up
+If you ever need to remove everything the installer created, use the companion script `uninstall-lofi-streamer.sh` that lives next to the installer in this repo.
+
+1. Make sure you have the script locally. Either clone the repo (as in step 1) or download just the uninstaller:
+   ```bash
+   wget https://raw.githubusercontent.com/teqherself/Lofi-Streamer-Pi5-Hyperpixel4xTSQ/main/uninstall-lofi-streamer.sh
+   ```
+2. Run it with sudo so it can stop and remove the systemd unit:
+   ```bash
+   chmod +x uninstall-lofi-streamer.sh
+   sudo ./uninstall-lofi-streamer.sh
+   ```
+
+The uninstaller stops and disables `lofi-streamer.service`, deletes the service file from `/etc/systemd/system/`, removes the `$HOME/LofiStream` directory, and vacuums the old journal logs for a clean slate.
+
+---
 ## Troubleshooting tips
 - Ensure the specified user exists and can access `/home/$USER_NAME`.
 - Confirm your RTMP destination (YouTube, Twitch, etc.) is reachable from the Pi network.
