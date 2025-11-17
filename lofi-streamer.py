@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterator, List, Optional
 
 # -------------------------------------------------------
-#  LOFI STREAMER v7.3 — GENDEMIK DIGITAL
+#  LOFI STREAMER v7.4 — GENDEMIK DIGITAL
 #  + Grey LOFI Audio Bar (showfreqs)
 #  + Double Height Visual Bar
 #  + Bottom-Hugging Right-Aligned Now Playing
