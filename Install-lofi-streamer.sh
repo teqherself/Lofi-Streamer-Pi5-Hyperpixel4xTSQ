@@ -35,7 +35,7 @@ python3 -m venv "$BASE_DIR/venv"
 source "$BASE_DIR/venv/bin/activate"
 
 pip install --upgrade pip
-pip install python3-mutagen
+pip install mutagen
 
 deactivate
 
