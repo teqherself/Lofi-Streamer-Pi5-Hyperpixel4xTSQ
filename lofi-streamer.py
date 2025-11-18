@@ -45,13 +45,16 @@ def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if raw is None:
         return default
-    try: return int(raw)
-    except: return default
+    try:
+        return int(raw)
+    except Exception:
+        return default
 
-def _env_bool(name: str, default=False):
+def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name)
-    if raw is None: return default
-    return raw.lower() in {"1","true","yes","on"}
+    if raw is None:
+        return default
+    return raw.lower() in {"1", "true", "yes", "on"}
 
 # ---------------- PATHS ----------------
 
@@ -78,22 +81,28 @@ SKIP_NETWORK_CHECK = _env_bool("LOFI_SKIP_NETWORK_CHECK")
 def wait_for_pi_ready():
     print("⏳ Waiting for Pi to be fully ready...")
 
+    # Network up
     while os.system("ping -c1 1.1.1.1 > /dev/null 2>&1") != 0:
         print("⏳ Waiting for network…")
         time.sleep(2)
     print("🌐 Internet OK")
 
+    # DNS working
     while True:
         try:
             socket.gethostbyname("google.com")
             print("🔍 DNS OK")
             break
-        except:
+        except Exception:
             print("⏳ Waiting for DNS…")
             time.sleep(2)
 
+    # Time/NTP sane (year >= 2023)
     while True:
-              yr = int(subprocess.check_output(["date","+%Y"]).decode().strip())
+        try:
+            yr = int(subprocess.check_output(["date", "+%Y"]).decode().strip())
+        except Exception:
+            yr = 1970
         if yr >= 2023:
             print("⏱ Time synced")
             break
@@ -106,13 +115,15 @@ def wait_for_pi_ready():
 
 def _is_valid_audio(t: Path) -> bool:
     lower = t.name.lower()
-    if lower.startswith("._"): return False
-    if lower.startswith("."): return False
-    return t.suffix.lower() in [".mp3",".wav",".flac",".m4a"]
+    if lower.startswith("._"):
+        return False
+    if lower.startswith("."):
+        return False
+    return t.suffix.lower() in [".mp3", ".wav", ".flac", ".m4a"]
 
 # ---------------- LOADERS ----------------
 
-def load_stream_url():
+def load_stream_url() -> str:
     if STREAM_URL_ENV:
         print("🔐 Using RTMP URL from environment.")
         return STREAM_URL_ENV.strip()
@@ -141,47 +152,49 @@ def _playlist_iterator(tracks):
 
 # ---------------- NETWORK CHECK ----------------
 
-def check_network():
+def check_network() -> bool:
     if SKIP_NETWORK_CHECK:
         return True
     try:
         with socket.create_connection((CHECK_HOST, CHECK_PORT), timeout=3):
             return True
-    except:
+    except Exception:
         return False
 
 # ---------------- VIDEO INPUT ----------------
 
-def _video_input_args(vf):
+def _video_input_args(vf: Optional[Path]):
     if vf and vf.exists():
-        return ["-stream_loop","-1","-re","-i",str(vf)], "[0:v]"
+        return ["-stream_loop", "-1", "-re", "-i", str(vf)], "[0:v]"
     return [
-        "-f","lavfi","-re",
-        "-i",f"color=c={FALLBACK_COLOR}:s={OUTPUT_W}x{OUTPUT_H}:r={FALLBACK_FPS}"
+        "-f", "lavfi", "-re",
+        "-i", f"color=c={FALLBACK_COLOR}:s={OUTPUT_W}x{OUTPUT_H}:r={FALLBACK_FPS}"
     ], "[0:v]"
 
 # ---------------- METADATA ----------------
 
-def _escape(s: str):
-    return s.replace(":", "\\:")
+def _escape(s: str) -> str:
+    return s.replace(":", r"\:")
 
 def _get_now_playing(t: Path) -> str:
-    title = ""; artist = ""
+    title = ""
+    artist = ""
     try:
-        import mutagen
+        import mutagen  # type: ignore
         m = mutagen.File(t, easy=True)
         if m:
-            title = m.get("title",[""])[0]
-            artist = m.get("artist",[""])[0]
-    except: pass
+            title = m.get("title", [""])[0]
+            artist = m.get("artist", [""])[0]
+    except Exception:
+        pass
 
-    if not title: title = t.stem
+    if not title:
+        title = t.stem
     return _escape(f"{artist} - {title}" if artist else title)
 
 # ---------------- FILTER CHAIN ----------------
 
-def _build_filter_chain(video_ref, nowplaying):
-
+def _build_filter_chain(video_ref: str, nowplaying: str) -> str:
     total_w = VU_SEG_WIDTH * 8
     vh = VU_HEIGHT
 
@@ -189,7 +202,7 @@ def _build_filter_chain(video_ref, nowplaying):
     logo_y = 40
 
     bar_x = 45
-    bar_y = OUTPUT_H - vh - 25   # = 580 on 720p
+    bar_y = OUTPUT_H - vh - 25   # ≈ 580 on 720p
 
     # Bottom hugging position for text:
     text_y = OUTPUT_H - 25 - 28   # 720 - 20 - fontsize
@@ -224,49 +237,54 @@ def _build_filter_chain(video_ref, nowplaying):
 
 def _track_duration(t: Path) -> int:
     try:
-        import mutagen
+        import mutagen  # type: ignore
         m = mutagen.File(t)
         if m and m.info:
             return int(m.info.length)
-    except: pass
+    except Exception:
+        pass
 
     try:
         r = subprocess.run(
-            ["ffprobe","-v","error","-show_entries","format=duration",
-             "-of","default=noprint_wrappers=1:nokey=1",str(t)],
-            capture_output=True,text=True
+            [
+                "ffprobe", "-v", "error",
+                "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                str(t),
+            ],
+            capture_output=True,
+            text=True,
         )
         return int(float(r.stdout.strip()))
-    except:
+    except Exception:
         return 180
 
 # ---------------- START STREAM ----------------
 
-def start_stream(track, stream_url, video_file, duration):
-
+def start_stream(track: Path, stream_url: str, video_file: Optional[Path], duration: int):
     nowp = _get_now_playing(track)
     print(f"🎧 {nowp}")
 
     video_args, video_ref = _video_input_args(video_file)
 
     cmd = [
-        "ffmpeg","-hide_banner","-loglevel","error",
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
         *video_args, "-i", str(track)
     ]
 
     if FFMPEG_LOGO.exists():
-        cmd += ["-loop","1","-i",str(FFMPEG_LOGO)]
+        cmd += ["-loop", "1", "-i", str(FFMPEG_LOGO)]
 
     filter_chain = _build_filter_chain(video_ref, nowp)
 
     cmd += [
         "-filter_complex", filter_chain,
-        "-map","[vout]","-map","[aout]",
-        "-c:v","libx264","-preset","veryfast","-b:v","2500k",
-        "-g","60","-keyint_min","60",
-        "-sc_threshold","0","-pix_fmt","yuv420p",
-        "-c:a","aac","-b:a","160k",
-        "-shortest","-f","flv",stream_url
+        "-map", "[vout]", "-map", "[aout]",
+        "-c:v", "libx264", "-preset", "veryfast", "-b:v", "2500k",
+        "-g", "60", "-keyint_min", "60",
+        "-sc_threshold", "0", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "160k",
+        "-shortest", "-f", "flv", stream_url,
     ]
 
     return subprocess.Popen(cmd)
@@ -274,7 +292,7 @@ def start_stream(track, stream_url, video_file, duration):
 # ---------------- MAIN LOOP ----------------
 
 def main():
-    print("🌙 LOFI STREAMER v7.3 — Bottom-Hugging Text + Cinematic Bar\n")
+    print("🌙 LOFI STREAMER v7.4 — Bottom-Hugging Text + Cinematic Bar\n")
 
     wait_for_pi_ready()
 
@@ -304,7 +322,8 @@ def main():
             p.wait(timeout=dur + TRACK_EXIT_BUFFER)
         except subprocess.TimeoutExpired:
             p.terminate()
-            try: p.wait(timeout=5)
+            try:
+                p.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 p.kill()
 
