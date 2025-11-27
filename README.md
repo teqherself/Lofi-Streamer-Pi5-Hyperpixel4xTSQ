@@ -1,5 +1,4 @@
 # Installation Guide — Lofi Streamer Pi5 + HyperPixel 4" TSQ
-
 <a href="#"><img src="https://img.shields.io/badge/Platform-Raspberry%20Pi-red?style=for-the-badge&logo=raspberrypi"></a>
 <a href="#"><img src="https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python"></a>
 <a href="#"><img src="https://img.shields.io/badge/Framework-Flask-green?style=for-the-badge&logo=flask"></a>
