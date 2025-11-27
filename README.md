@@ -14,20 +14,12 @@ Brand: GENDEMIK DIGITAL
 
 ## Overview
 
-The GENDEMIK DIGITAL Lofi Streamer Suite turns a Raspberry Pi into a fully automated, self-healing YouTube livestream unit featuring:
+Picture a tiny Pi on your shelf, quietly breathing life into a 24/7 lo-fi chill stream: the camera frames your space, the audio deck rotates your playlist, and a protective audio chain keeps the vibe smooth. If the network wobbles, the stream stitches itself back together; if you want visibility or remote control, a web dashboard gives you a cockpit. That is the GENDEMIK DIGITAL Lofi Streamer Suite.
 
-- 📸 Picamera2 real-time video at 960×540
-- 🎵 Audio playlist rotation with per-track ffmpeg sessions
-- 🔊 Safe loudness protection (dynaudnorm + limiter)
-- 🖼️ On-screen overlays: Now Playing, logo, audio bar
-- 🧠 Network watchdogs + Pi-ready checks
-- 🔁 Continuous fallback-safe streaming
-- 🖥️ Optional web dashboard add-on for control and monitoring
+The suite combines two pieces:
 
-This README covers both components:
-
-- **Lofi Streamer (core engine)**
-- **Dashboard Add-On (web controller)**
+- **Lofi Streamer (core engine)** — a self-healing RTMP pipeline that captures Picamera2 video, blends in overlays, normalizes audio, and keeps broadcasting without human babysitting.
+- **Dashboard Add-On (web controller)** — a minimal, passworded web UI to start/stop the streamer, check system health, and see what track is playing.
 
 ## Features
 
@@ -38,6 +30,7 @@ This README covers both components:
 - Safe Audio Engine: `dynaudnorm` smoothing + `alimiter=limit=0.95` hard protection
 - Overlays: Now Playing text, mini audio bar, top-right transparent logo
 - Network watchdog and fallback logic to keep the stream alive
+- Designed for set-and-forget weekend vibes—once you start it, it looks after itself
 
 ### 🖥️ Dashboard Add-On (optional)
 
