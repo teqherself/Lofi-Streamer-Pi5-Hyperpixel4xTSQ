@@ -4,6 +4,7 @@
 <a href="#"><img src="https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python"></a>
 <a href="#"><img src="https://img.shields.io/badge/Service-systemd-orange?style=for-the-badge"></a>
 
+
 This guide explains how to deploy the automated **Lofi Streamer** service on a Raspberry Pi using the bundled `Install-lofi-streamer.sh` script. Follow these steps from a fresh Raspberry Pi OS (64-bit) install connected to the internet.
 
 ---
