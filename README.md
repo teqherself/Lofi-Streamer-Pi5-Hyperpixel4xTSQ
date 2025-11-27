@@ -4,128 +4,103 @@ Raspberry Pi 4 / 5 • Picamera2 • YouTube RTMP Streaming
 Maintainer: Ms Stevie Woo — Manchester, UK
 Brand: GENDEMIK DIGITAL
 
-<p align="center"> <img src="https://img.shields.io/badge/Platform-Raspberry%20Pi-red?style=for-the-badge&logo=raspberrypi"> <img src="https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python"> <img src="https://img.shields.io/badge/Picamera2-Video%20First-purple?style=for-the-badge"> <img src="https://img.shields.io/badge/Streaming-YouTube%20RTMP-yellow?style=for-the-badge&logo=youtube"> <img src="https://img.shields.io/badge/Service-systemd-orange?style=for-the-badge"> </p>
-📦 Overview
+<p align="center">
+  <img src="https://img.shields.io/badge/Platform-Raspberry%20Pi-red?style=for-the-badge&logo=raspberrypi">
+  <img src="https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python">
+  <img src="https://img.shields.io/badge/Picamera2-Video%20First-purple?style=for-the-badge">
+  <img src="https://img.shields.io/badge/Streaming-YouTube%20RTMP-yellow?style=for-the-badge&logo=youtube">
+  <img src="https://img.shields.io/badge/Service-systemd-orange?style=for-the-badge">
+</p>
+
+## Overview
 
 The GENDEMIK DIGITAL Lofi Streamer Suite turns a Raspberry Pi into a fully automated, self-healing YouTube livestream unit featuring:
 
-📸 Picamera2 real-time video at 960×540
-
-🎵 Audio playlist rotation with per-track ffmpeg sessions
-
-🔊 Safe loudness protection (dynaudnorm + limiter)
-
-🖼️ On-screen overlays: Now Playing, Logo, Audio Bar
-
-🧠 Network watchdogs + Pi-ready checks
-
-🔁 Continuous fallback-safe streaming
-
-🖥️ Optional web dashboard add-on for control + monitoring
+- 📸 Picamera2 real-time video at 960×540
+- 🎵 Audio playlist rotation with per-track ffmpeg sessions
+- 🔊 Safe loudness protection (dynaudnorm + limiter)
+- 🖼️ On-screen overlays: Now Playing, logo, audio bar
+- 🧠 Network watchdogs + Pi-ready checks
+- 🔁 Continuous fallback-safe streaming
+- 🖥️ Optional web dashboard add-on for control and monitoring
 
 This README covers both components:
 
-Lofi Streamer (core engine)
+- **Lofi Streamer (core engine)**
+- **Dashboard Add-On (web controller)**
 
-Dashboard Add-On (web controller)
+## Features
 
-✨ Features
-🎥 Lofi Streamer (Core)
+### 🎥 Lofi Streamer (core)
 
-Stable Picamera2 pipeline (Video-First)
+- Stable Picamera2 pipeline (Video-First): 960×540 MJPEG capture → ffmpeg → H.264 RTMP output
+- Audio playlist from `~/LofiStream/Sounds/*.mp3` with auto-refresh when new tracks are added
+- Safe Audio Engine: `dynaudnorm` smoothing + `alimiter=limit=0.95` hard protection
+- Overlays: Now Playing text, mini audio bar, top-right transparent logo
+- Network watchdog and fallback logic to keep the stream alive
 
-960×540 MJPEG capture → ffmpeg → H.264 RTMP output
+### 🖥️ Dashboard Add-On (optional)
 
-Audio playlist from ~/LofiStream/Sounds/*.mp3
+- Password-protected login (PBKDF2 SHA-256)
+- Start/Stop/Restart the streamer systemd service
+- Live system metrics and recent streamer logs (last 40 lines)
+- Camera + service status indicators and safe system reboot button
+- Shows the currently playing track with an auto-updating interface
 
-Safe Audio Engine
+## Installation Options
 
-dynaudnorm smoothing
+Choose one path below depending on whether you want the dashboard.
 
-alimiter=limit=0.95 hard protection
-
-Auto-refreshed playlist (add new tracks any time)
-
-Now Playing text overlay
-
-Mini audio bar (Pi-safe)
-
-Logo overlay (top-right, transparent PNG)
-
-Network watchdog + fallback logic
-
-Full automatic loop streaming
-
-🖥️ Dashboard Add-On (Optional)
-
-Password-protected login (PBKDF2 SHA-256)
-
-Start / Stop / Restart the streamer systemd service
-
-Live system metrics
-
-Live streamer logs (last 40 lines)
-
-Camera status + service status indicators
-
-Safe system reboot button
-
-Shows currently playing track
-
-Auto-updating interface
-
-🧩 Installation Options
-▶️ Option A — Install ONLY the Streamer
+### ▶️ Option A — Install only the streamer
 
 Use this if you don’t want a dashboard.
 
+```bash
 bash <(wget -qO- https://raw.githubusercontent.com/teqherself/Lofi-Streamer/main/install.sh)
-
+```
 
 This installs:
 
-~/LofiStream/
-  Servers/lofi-streamer.py
-  Sounds/
-  Videos/
-  Logo/
-  stream_url.txt
+- `~/LofiStream/`
+  - `Servers/lofi-streamer.py`
+  - `Sounds/`
+  - `Videos/`
+  - `Logo/`
+  - `stream_url.txt`
 
+And registers the `lofi-streamer.service` systemd unit.
 
-And registers:
+### ▶️ Option B — Install only the dashboard add-on
 
-lofi-streamer.service
+Use this **after** you have installed the streamer.
 
-▶️ Option B — Install ONLY the Dashboard Add-On
-
-Use this AFTER you have installed the streamer.
-
+```bash
 bash <(wget -qO- https://raw.githubusercontent.com/teqherself/Lofi-Streamer-Pi4-dashboard/main/install.sh)
-
+```
 
 This installs:
 
-~/LofiStream/Dashboard/
-  dashboard.py
-  system_helper.sh
-  templates/
-  static/
-lofi-dashboard.service
-/etc/sudoers.d/lofi-dashboard
+- `~/LofiStream/Dashboard/`
+  - `dashboard.py`
+  - `system_helper.sh`
+  - `templates/`
+  - `static/`
+- `lofi-dashboard.service`
+- `/etc/sudoers.d/lofi-dashboard`
 
+Dashboard opens at `http://<Pi-IP>:4455`.
 
-Dashboard opens at:
-
-http://<Pi-IP>:4455
-
-▶️ Option C — Install BOTH (Streamer first, then Dashboard)
+### ▶️ Option C — Install both (streamer first, then dashboard)
 
 1️⃣ Install streamer
+
 2️⃣ Install dashboard
 
 Done.
 
-📁 Directory Layout
+## Directory Layout
+
+```
 LofiStream/
 ├── Servers/
 │   └── lofi-streamer.py
@@ -142,90 +117,81 @@ LofiStream/
     │   └── login.html
     └── static/
         └── style.css
+```
 
-⚙️ Systemd Services
-Streamer
+## Systemd Services
+
+**Streamer**
+
+```bash
 sudo systemctl start lofi-streamer
 sudo systemctl stop lofi-streamer
 sudo systemctl restart lofi-streamer
 journalctl -u lofi-streamer -n 40 --no-pager
+```
 
-Dashboard
+**Dashboard**
+
+```bash
 sudo systemctl restart lofi-dashboard
 sudo systemctl status lofi-dashboard
 journalctl -u lofi-dashboard -n 50 --no-pager
+```
 
-🖥️ Using the Dashboard
+## Using the Dashboard
 
-Open: http://<pi-ip>:4455
+1. Open `http://<pi-ip>:4455`.
+2. Log in with your configured credentials.
+3. Use the controls to:
+   - Start / Stop / Restart the streamer
+   - Reboot the system safely
+   - View the live track, metrics, and recent logs
+4. Monitor your stream and Pi health in real time.
 
-Log in
+## Troubleshooting
 
-Use controls:
+- ❌ Dashboard won’t load → `sudo systemctl status lofi-dashboard`
+- ❌ Buttons don’t work → check sudoers file with `cat /etc/sudoers.d/lofi-dashboard`
+- ❌ Streamer not running → `sudo systemctl status lofi-streamer`
+- ❌ No camera → ensure nothing else is using `/dev/media*` or `/dev/video*`:
 
-Start / Stop / Restart Streamer
+  ```bash
+  sudo lsof /dev/video* /dev/media*
+  ```
 
-System reboot
+## Uninstall
 
-Live track
+**Remove Dashboard**
 
-Live metrics
-
-Recent logs
-
-Monitor your stream and Pi health
-
-🛠 Troubleshooting
-❌ Dashboard won’t load
-sudo systemctl status lofi-dashboard
-
-❌ Buttons don’t work
-
-Check sudoers file:
-
-cat /etc/sudoers.d/lofi-dashboard
-
-❌ Streamer not running
-sudo systemctl status lofi-streamer
-
-❌ No camera
-
-Make sure no other program is using /dev/media* or /dev/video*:
-
-sudo lsof /dev/video* /dev/media*
-
-🗑 Uninstall
-Remove Dashboard
+```bash
 sudo systemctl stop lofi-dashboard
 sudo systemctl disable lofi-dashboard
 sudo rm /etc/systemd/system/lofi-dashboard.service
 sudo rm /etc/sudoers.d/lofi-dashboard
 rm -rf ~/LofiStream/Dashboard
 sudo systemctl daemon-reload
+```
 
-Remove Streamer
+**Remove Streamer**
+
+```bash
 sudo systemctl stop lofi-streamer
 sudo systemctl disable lofi-streamer
 sudo rm /etc/systemd/system/lofi-streamer.service
 rm -rf ~/LofiStream
 sudo systemctl daemon-reload
+```
 
-🧭 Roadmap
+## Roadmap
 
-Multi-stream YouTube channel selector
+- Multi-stream YouTube channel selector
+- Dark mode dashboard
+- Camera preview tile
+- On-Pi settings editor (no SSH needed)
+- Over-the-air streamer updater
+- Remote config sync
+- Touch-friendly control mode
 
-Dark mode dashboard
-
-Camera preview tile
-
-On-Pi settings editor (no SSH needed)
-
-Over-the-air streamer updater
-
-Remote config sync
-
-Touch-friendly control mode
-
-❤️ Support
+## Support
 
 If this project helps you, consider supporting GENDEMIK DIGITAL.
