@@ -31,11 +31,9 @@ TRACK_EXIT_BUFFER = 5
 
 DEFAULT_NOWPLAYING_FILE = Path("/tmp/nowplaying.txt")
 
-
 def _detect_base_dir() -> Path:
     base = Path(__file__).resolve().parent
     return base.parent if base.name.lower() == "servers" else base
-
 
 BASE_DIR = _detect_base_dir()
 
@@ -50,7 +48,6 @@ def _env_path(name: str, default: Path) -> Path:
     except FileNotFoundError:
         return raw
 
-
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if raw is None:
@@ -59,7 +56,6 @@ def _env_int(name: str, default: int) -> int:
         return int(raw)
     except Exception:
         return default
-
 
 def _env_bool(name: str, default: bool = False) -> bool:
     raw = os.environ.get(name)
@@ -99,13 +95,11 @@ CONCAT_PLAYLIST_FILE = _env_path("LOFI_CONCAT_FILE", BASE_DIR / "lofi_concat.txt
 def wait_for_pi_ready():
     print("⏳ Waiting for Pi to be fully ready...")
 
-    # Network up
     while os.system("ping -c1 1.1.1.1 > /dev/null 2>&1") != 0:
         print("⏳ Waiting for network…")
         time.sleep(2)
     print("🌐 Internet OK")
 
-    # DNS
     while True:
         try:
             socket.gethostbyname("google.com")
@@ -115,7 +109,6 @@ def wait_for_pi_ready():
             print("⏳ Waiting for DNS…")
             time.sleep(2)
 
-    # NTP
     while True:
         try:
             yr = int(subprocess.check_output(["date", "+%Y"]).decode().strip())
@@ -156,7 +149,6 @@ def load_stream_url() -> str:
     print("❌ No RTMP URL found!")
     return ""
 
-
 def load_tracks() -> List[Path]:
     if not PLAYLIST_DIR.exists():
         print("❌ Sounds folder missing:", PLAYLIST_DIR)
@@ -164,7 +156,6 @@ def load_tracks() -> List[Path]:
     tracks = [t for t in PLAYLIST_DIR.iterdir() if _is_valid_audio(t)]
     print(f"🎶 Loaded {len(tracks)} tracks.")
     return tracks
-
 
 def load_video_file() -> Optional[Path]:
     if VIDEO_FILE.exists():
@@ -193,7 +184,6 @@ def check_network() -> bool:
 def _escape_drawtext(s: str) -> str:
     return s.replace(":", r"\:")
 
-
 def _get_now_playing_str(t: Path) -> str:
     title = ""
     artist = ""
@@ -211,7 +201,6 @@ def _get_now_playing_str(t: Path) -> str:
 
     disp = f"{artist} - {title}" if artist else title
     return _escape_drawtext(disp)
-
 
 def write_nowplaying_file(track: Path):
     text = _get_now_playing_str(track)
@@ -234,7 +223,6 @@ def _track_duration(t: Path) -> int:
     except Exception:
         pass
 
-    # ffprobe fallback
     try:
         r = subprocess.run(
             [
@@ -265,7 +253,7 @@ def build_track_schedule(tracks: List[Path]) -> List[Tuple[Path, int]]:
     return schedule
 
 # -------------------------------------------------------
-# CONCAT PLAYLIST FILE
+# FIXED CONCAT QUOTING (only change)
 # -------------------------------------------------------
 
 def build_concat_file(tracks: List[Path], concat_file: Path):
@@ -276,10 +264,9 @@ def build_concat_file(tracks: List[Path], concat_file: Path):
 
     with concat_file.open("w", encoding="utf-8") as f:
         for t in order:
-            # Fixed safe quoting
-            san = str(t).replace("'", "'\\''")
-            line = f"file '{san}'\n"
-            f.write(line)
+            # Correct ffmpeg escaping for single quotes in paths
+            san = str(t).replace("'", r"\'")
+            f.write(f"file '{san}'\n")
 
     print(f"📝 Built concat playlist at {concat_file}")
     return order
@@ -342,7 +329,7 @@ def metadata_loop(schedule: List[Tuple[Path, int]]):
             time.sleep(max(1, dur - 1))
 
 # -------------------------------------------------------
-# FFMPEG COMMAND BUILDER
+# FFMPEG
 # -------------------------------------------------------
 
 def _video_input_args(vf: Optional[Path]):
@@ -352,7 +339,6 @@ def _video_input_args(vf: Optional[Path]):
         "-f", "lavfi", "-re",
         "-i", f"color=c={FALLBACK_COLOR}:s={OUTPUT_W}x{OUTPUT_H}:r={FALLBACK_FPS}"
     ]
-
 
 def build_ffmpeg_cmd(stream_url: str, video_file: Optional[Path], has_logo: bool):
     video_args = _video_input_args(video_file)
@@ -382,7 +368,7 @@ def build_ffmpeg_cmd(stream_url: str, video_file: Optional[Path], has_logo: bool
     return cmd
 
 # -------------------------------------------------------
-# MAIN LOOP
+# MAIN
 # -------------------------------------------------------
 
 def main():
@@ -400,14 +386,11 @@ def main():
         print("❌ No audio tracks — exiting.")
         return
 
-    # Build playlist
     ordered_tracks = build_concat_file(tracks, CONCAT_PLAYLIST_FILE)
     schedule = build_track_schedule(ordered_tracks)
 
-    # Initial now playing
     write_nowplaying_file(schedule[0][0])
 
-    # Start metadata thread
     threading.Thread(
         target=metadata_loop,
         args=(schedule,),
@@ -419,7 +402,6 @@ def main():
     if has_logo:
         print(f"🖼 Logo: {FFMPEG_LOGO}")
 
-    # Main ffmpeg loop
     while True:
         if not check_network():
             print("🌐 RTMP offline, retry in 5s…")
@@ -440,7 +422,6 @@ def main():
 
         print(f"⚠️ ffmpeg exited (code {rc}). Restarting in 5s…")
         time.sleep(5)
-
 
 if __name__ == "__main__":
     main()
