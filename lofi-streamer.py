@@ -9,15 +9,14 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 # -------------------------------------------------------
-#  LOFI STREAMER v7.9 — CONTINUOUS EDITION
-#  + Single ffmpeg pipeline (no per-track restarts)
-#  + Grey LOFI Audio Bar (showfreqs)
-#  + Bottom-Hugging Right-Aligned Now Playing (textfile)
-#  + Top Right Logo
-#  + Pi-Safe Filters
+#  LOFI STREAMER v8.1 — CONTINUOUS EDITION
+#  + No ffmpeg restart per track
+#  + Deadlock-proof RTMP pipeline
+#  + Overnight latency safe
+#  + Timestamp corrected
 # -------------------------------------------------------
 
-VERSION = "7.9-continuous"
+VERSION = "8.1-continuous"
 
 OUTPUT_W = 1280
 OUTPUT_H = 720
@@ -27,7 +26,6 @@ VU_HEIGHT = 120
 
 LOGO_PADDING = 40
 TEXT_PADDING = 40
-TRACK_EXIT_BUFFER = 5
 
 DEFAULT_NOWPLAYING_FILE = Path("/tmp/nowplaying.txt")
 
@@ -37,36 +35,27 @@ def _detect_base_dir() -> Path:
 
 BASE_DIR = _detect_base_dir()
 
-# -------------------------------------------------------
-# ENV HELPERS
-# -------------------------------------------------------
-
+# ---------- ENV VAR LOADING ----------
 def _env_path(name: str, default: Path) -> Path:
     raw = Path(os.environ.get(name, str(default))).expanduser()
     try:
         return raw.resolve(strict=False)
-    except FileNotFoundError:
+    except Exception:
         return raw
 
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
+def _env_int(name, default):
     try:
-        return int(raw)
-    except Exception:
+        return int(os.environ.get(name, default))
+    except:
         return default
 
-def _env_bool(name: str, default: bool = False) -> bool:
+def _env_bool(name, default=False):
     raw = os.environ.get(name)
     if raw is None:
         return default
-    return raw.lower() in {"1", "true", "yes", "on"}
+    return raw.lower() in ("1", "true", "yes", "on")
 
-# -------------------------------------------------------
-# PATHS
-# -------------------------------------------------------
-
+# ---------- PATHS ----------
 PLAYLIST_DIR = _env_path("LOFI_PLAYLIST_DIR", BASE_DIR / "Sounds")
 LOGO_DIR = _env_path("LOFI_BRAND_DIR", BASE_DIR / "Logo")
 VIDEO_DIR = _env_path("LOFI_VIDEO_DIR", BASE_DIR / "Videos")
@@ -77,39 +66,35 @@ STREAM_URL_ENV = os.environ.get("LOFI_YOUTUBE_URL", "")
 FFMPEG_LOGO = _env_path("LOFI_BRAND_IMAGE", LOGO_DIR / "LoFiLogo700.png")
 VIDEO_FILE = _env_path("LOFI_VIDEO_FILE", VIDEO_DIR / "Lofi3.mp4")
 
-FALLBACK_COLOR = os.environ.get("LOFI_FALLBACK_COLOR", "black")
-FALLBACK_FPS = _env_int("LOFI_FALLBACK_FPS", 30)
-
-CHECK_HOST = os.environ.get("LOFI_CHECK_HOST", "a.rtmp.youtube.com")
-CHECK_PORT = _env_int("LOFI_CHECK_PORT", 1935)
-
-SKIP_NETWORK_CHECK = _env_bool("LOFI_SKIP_NETWORK_CHECK")
-
 NOWPLAYING_FILE = _env_path("LOFI_NOWPLAYING_FILE", DEFAULT_NOWPLAYING_FILE)
 CONCAT_PLAYLIST_FILE = _env_path("LOFI_CONCAT_FILE", BASE_DIR / "lofi_concat.txt")
 
-# -------------------------------------------------------
-# BOOT WAIT
-# -------------------------------------------------------
+CHECK_HOST = "a.rtmp.youtube.com"
+CHECK_PORT = 1935
 
+
+# ---------- PI-READY ----------
 def wait_for_pi_ready():
     print("⏳ Waiting for Pi to be fully ready...")
 
-    while os.system("ping -c1 1.1.1.1 > /dev/null 2>&1") != 0:
-        print("⏳ Waiting for network…")
+    # Internet
+    for _ in range(60):
+        if os.system("ping -c1 1.1.1.1 >/dev/null 2>&1") == 0:
+            print("🌐 Internet OK")
+            break
         time.sleep(2)
-    print("🌐 Internet OK")
 
-    while True:
+    # DNS
+    for _ in range(60):
         try:
             socket.gethostbyname("google.com")
             print("🔍 DNS OK")
             break
-        except Exception:
-            print("⏳ Waiting for DNS…")
+        except:
             time.sleep(2)
 
-    while True:
+    # Time / Year
+    for _ in range(120):
         try:
             yr = int(subprocess.check_output(["date", "+%Y"]).decode().strip())
         except Exception:
@@ -117,311 +102,236 @@ def wait_for_pi_ready():
         if yr >= 2023:
             print("⏱ Time synced")
             break
-        print("⏳ Waiting for NTP…")
         time.sleep(2)
 
-    print("✅ Pi Ready!\n")
+    print("✅ Pi Ready\n")
 
-# -------------------------------------------------------
-# TRACK FILTER
-# -------------------------------------------------------
 
-def _is_valid_audio(t: Path) -> bool:
-    lower = t.name.lower()
-    if lower.startswith("._"):
+# ---------- TRACK FILTER ----------
+def _is_valid_audio(t: Path):
+    if t.name.startswith("._") or t.name.startswith("."):
         return False
-    if lower.startswith("."):
-        return False
-    return t.suffix.lower() in [".mp3", ".wav", ".flac", ".m4a"]
+    return t.suffix.lower() in (".mp3", ".wav", ".flac", ".m4a")
 
-# -------------------------------------------------------
-# LOADERS
-# -------------------------------------------------------
 
-def load_stream_url() -> str:
+# ---------- LOADERS ----------
+def load_stream_url():
     if STREAM_URL_ENV:
-        print("🔐 Using RTMP URL from environment.")
+        print("🔐 Using RTMP URL from environment")
         return STREAM_URL_ENV.strip()
+
     if STREAM_URL_FILE.exists():
         url = STREAM_URL_FILE.read_text().strip()
-        print(f"📄 Loaded RTMP URL from {STREAM_URL_FILE}")
+        print(f"📄 RTMP URL = {url}")
         return url
+
     print("❌ No RTMP URL found!")
     return ""
 
 def load_tracks() -> List[Path]:
     if not PLAYLIST_DIR.exists():
-        print("❌ Sounds folder missing:", PLAYLIST_DIR)
+        print("❌ No playlist folder:", PLAYLIST_DIR)
         return []
     tracks = [t for t in PLAYLIST_DIR.iterdir() if _is_valid_audio(t)]
-    print(f"🎶 Loaded {len(tracks)} tracks.")
+    print(f"🎶 Loaded {len(tracks)} tracks")
     return tracks
 
-def load_video_file() -> Optional[Path]:
+def load_video_file():
     if VIDEO_FILE.exists():
         print(f"🎥 Background video: {VIDEO_FILE}")
         return VIDEO_FILE
-    print("🎥 Using solid colour fallback.")
+    print("🎥 Using fallback solid")
     return None
 
-# -------------------------------------------------------
-# NETWORK CHECK
-# -------------------------------------------------------
 
-def check_network() -> bool:
-    if SKIP_NETWORK_CHECK:
-        return True
+# ---------- NETWORK ----------
+def check_network():
     try:
         with socket.create_connection((CHECK_HOST, CHECK_PORT), timeout=3):
             return True
-    except Exception:
+    except:
         return False
 
-# -------------------------------------------------------
-# METADATA
-# -------------------------------------------------------
 
+# ---------- NOW PLAYING ----------
 def _escape_drawtext(s: str) -> str:
     return s.replace(":", r"\:")
 
-def _get_now_playing_str(t: Path) -> str:
-    title = ""
-    artist = ""
+def _get_text(t: Path):
     try:
         import mutagen
         m = mutagen.File(t, easy=True)
-        if m:
-            title = m.get("title", [""])[0]
-            artist = m.get("artist", [""])[0]
-    except Exception:
-        pass
+        title = m.get("title", [""])[0]
+        artist = m.get("artist", [""])[0]
+    except:
+        title = ""
+        artist = ""
 
     if not title:
         title = t.stem
 
-    disp = f"{artist} - {title}" if artist else title
-    return _escape_drawtext(disp)
+    return _escape_drawtext(f"{artist} - {title}" if artist else title)
 
-def write_nowplaying_file(track: Path):
-    text = _get_now_playing_str(track)
+def write_nowplaying(track: Path):
     try:
-        NOWPLAYING_FILE.write_text(text, encoding="utf-8")
-        print(f"🎧 Now playing: {text}")
-    except Exception as e:
-        print(f"⚠️ Failed to write nowplaying file: {e}")
-
-# -------------------------------------------------------
-# TRACK DURATIONS
-# -------------------------------------------------------
-
-def _track_duration(t: Path) -> int:
-    try:
-        import mutagen
-        m = mutagen.File(t)
-        if m and m.info and getattr(m.info, "length", None):
-            return max(1, int(m.info.length))
-    except Exception:
+        NOWPLAYING_FILE.write_text(_get_text(track))
+    except:
         pass
 
-    try:
-        r = subprocess.run(
-            [
-                "ffprobe",
-                "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                str(t),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        val = r.stdout.strip()
-        if val:
-            return max(1, int(float(val)))
-    except Exception:
-        pass
 
-    return 180
+# ---------- BUILD CONCAT ----------
+def build_concat(tracks, out):
+    random.shuffle(tracks)
+    out.write_text(
+        "\n".join(f"file '{str(t).replace(\"'\", r\"\\'\")}'" for t in tracks)
+    )
+    print(f"📝 Playlist compiled: {out}")
 
-def build_track_schedule(tracks: List[Path]) -> List[Tuple[Path, int]]:
-    schedule = []
-    for t in tracks:
-        d = _track_duration(t)
-        schedule.append((t, d))
-    total = sum(d for _, d in schedule)
-    print(f"⏱ Total playlist = {total/60:.1f} min")
-    return schedule
 
-# -------------------------------------------------------
-# FIXED CONCAT QUOTING (only change)
-# -------------------------------------------------------
-
-def build_concat_file(tracks: List[Path], concat_file: Path):
-    order = list(tracks)
-    random.shuffle(order)
-
-    concat_file.parent.mkdir(parents=True, exist_ok=True)
-
-    with concat_file.open("w", encoding="utf-8") as f:
-        for t in order:
-            # Correct ffmpeg escaping for single quotes in paths
-            san = str(t).replace("'", r"\'")
-            f.write(f"file '{san}'\n")
-
-    print(f"📝 Built concat playlist at {concat_file}")
-    return order
-
-# -------------------------------------------------------
-# FILTER CHAIN
-# -------------------------------------------------------
-
-def _build_filter_chain(has_logo: bool) -> str:
+# ---------- FILTER CHAIN ----------
+def _filter_chain(has_logo: bool):
     total_w = VU_SEG_WIDTH * 8
     vh = VU_HEIGHT
-
-    logo_x = 540
-    logo_y = 40
 
     bar_x = 45
     bar_y = OUTPUT_H - vh - 25
 
-    text_y = OUTPUT_H - 25 - 28
+    text_y = OUTPUT_H - 28 - 5
 
     np_path = NOWPLAYING_FILE.as_posix()
 
+    base = f"[0:v]scale={OUTPUT_W}x{OUTPUT_H},format=yuv420p[v0]"
+
     if has_logo:
-        logo = (
-            f"[0:v]scale={OUTPUT_W}x{OUTPUT_H},format=yuv420p[v0];"
-            f"[v0][2:v]overlay={logo_x}:{logo_y}[vbase]"
-        )
+        base += ";[v0][2:v]overlay=540:40[vb]"
     else:
-        logo = f"[0:v]scale={OUTPUT_W}x{OUTPUT_H},format=yuv420p[vbase]"
+        base += "[vb]"
 
-    bar = (
-        f"[1:a]asplit=2[a_raw][a_vis];"
-        f"[a_raw]loudnorm=I=-16:LRA=11:TP=-1.5[aout];"
-        f"[a_vis]showfreqs=s={total_w}x{vh}[vf];"
-        f"[vf]format=rgba,colorchannelmixer="
-        f"rr=0.6:gg=0.6:bb=0.6:aa=1[vbar];"
-        f"[vbase][vbar]overlay={bar_x}:{bar_y}[vstrip]"
-    )
-
-    text = (
-        f"[vstrip]drawtext="
-        f"textfile='{np_path}':"
-        f"reload=1:"
-        f"fontcolor=white:fontsize=28:"
-        f"shadowcolor=black:shadowx=2:shadowy=2:"
+    chain = (
+        f"{base};"
+        f"[1:a]asplit=2[a0][avis];"
+        f"[avis]showfreqs=s={total_w}x{vh}[vf];"
+        f"[vf]format=rgba,colorchannelmixer=rr=0.6:gg=0.6:bb=0.6:aa=1[vbar];"
+        f"[vb][vbar]overlay={bar_x}:{bar_y}[v1];"
+        f"[v1]drawtext=textfile='{np_path}':reload=1:"
+        "fontcolor=white:fontsize=28:shadowcolor=black:shadowx=2:shadowy=2:"
         f"x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
     )
 
-    return f"{logo};{bar};{text}"
+    return chain
 
-# -------------------------------------------------------
-# METADATA THREAD
-# -------------------------------------------------------
 
-def metadata_loop(schedule: List[Tuple[Path, int]]):
-    print("🧠 Metadata updater started.")
+# ---------- WATCHDOG ----------
+def watchdog_ffmpeg(cmd):
+    print("🚀 FFmpeg starting…")
+    proc = subprocess.Popen(cmd)
+
     while True:
-        for track, dur in schedule:
-            write_nowplaying_file(track)
-            time.sleep(max(1, dur - 1))
+        rc = proc.poll()
+        if rc is not None:
+            print(f"⚠️ ffmpeg exited {rc}")
+            return
 
-# -------------------------------------------------------
-# FFMPEG
-# -------------------------------------------------------
+        if not check_network():
+            print("🌐 RTMP dropped — restarting…")
+            proc.terminate()
+            time.sleep(2)
+            return
 
-def _video_input_args(vf: Optional[Path]):
-    if vf and vf.exists():
-        return ["-stream_loop", "-1", "-re", "-i", str(vf)]
-    return [
-        "-f", "lavfi", "-re",
-        "-i", f"color=c={FALLBACK_COLOR}:s={OUTPUT_W}x{OUTPUT_H}:r={FALLBACK_FPS}"
-    ]
+        time.sleep(5)
 
-def build_ffmpeg_cmd(stream_url: str, video_file: Optional[Path], has_logo: bool):
-    video_args = _video_input_args(video_file)
-    filter_chain = _build_filter_chain(has_logo)
+
+# ---------- FFmpeg CMD ----------
+def build_ffmpeg_cmd(stream_url, video_file, has_logo):
+
+    # Video input
+    video = (
+        ["-stream_loop", "-1", "-i", str(video_file)]
+        if video_file
+        else ["-f", "lavfi", "-i", f"color=c=black:s={OUTPUT_W}x{OUTPUT_H}:r=30"]
+    )
+
+    filters = _filter_chain(has_logo)
 
     cmd = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        *video_args,
-        "-re", "-stream_loop", "-1",
-        "-f", "concat", "-safe", "0",
-        "-i", str(CONCAT_PLAYLIST_FILE),
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel", "warning",
+
+        "-use_wallclock_as_timestamps", "1",
+        "-avoid_negative_ts", "make_zero",
+        "-max_muxing_queue_size", "4096",
+
+        "-fflags", "+flush_packets+nobuffer",
+        "-flush_packets", "1",
+
+        *video,
+
+        "-re",
+        "-f", "concat", "-safe", "0", "-i", str(CONCAT_PLAYLIST_FILE),
     ]
 
     if has_logo:
         cmd += ["-loop", "1", "-i", str(FFMPEG_LOGO)]
 
     cmd += [
-        "-filter_complex", filter_chain,
-        "-map", "[vout]", "-map", "[aout]",
-        "-c:v", "libx264", "-preset", "veryfast", "-b:v", "2500k",
-        "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+        "-filter_complex", filters,
+        "-map", "[vout]",
+        "-map", "[a0]",
+
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-b:v", "2500k",
+        "-g", "60",
+        "-keyint_min", "60",
+        "-sc_threshold", "0",
         "-pix_fmt", "yuv420p",
-        "-c:a", "aac", "-b:a", "160k",
+
+        "-c:a", "aac",
+        "-b:a", "160k",
+
+        "-af", "aresample=async=1000",  # 🔥 RE-TIME AUDIO
+
         "-f", "flv", stream_url,
     ]
 
     return cmd
 
-# -------------------------------------------------------
-# MAIN
-# -------------------------------------------------------
 
+# ---------- MAIN ----------
 def main():
-    print(f"🌙 LOFI STREAMER v{VERSION} — Continuous RTMP Pipeline\n")
+    print(f"\n🌙 LOFI STREAMER v{VERSION}\n")
 
     wait_for_pi_ready()
 
-    stream_url = load_stream_url()
-    if not stream_url:
-        print("❌ Missing RTMP URL — exiting.")
+    url = load_stream_url()
+    if not url:
         return
 
     tracks = load_tracks()
     if not tracks:
-        print("❌ No audio tracks — exiting.")
         return
 
-    ordered_tracks = build_concat_file(tracks, CONCAT_PLAYLIST_FILE)
-    schedule = build_track_schedule(ordered_tracks)
+    build_concat(tracks, CONCAT_PLAYLIST_FILE)
+    write_nowplaying(tracks[0])
 
-    write_nowplaying_file(schedule[0][0])
+    video = load_video_file()
+    has_logo = FFMPEG_LOGO.exists()
 
-    threading.Thread(
-        target=metadata_loop,
-        args=(schedule,),
+    threading.Thread(target=lambda:
+        [write_nowplaying(t) or time.sleep(180) for t in tracks],
         daemon=True
     ).start()
 
-    video_file = load_video_file()
-    has_logo = FFMPEG_LOGO.exists()
-    if has_logo:
-        print(f"🖼 Logo: {FFMPEG_LOGO}")
-
     while True:
         if not check_network():
-            print("🌐 RTMP offline, retry in 5s…")
             time.sleep(5)
             continue
 
-        cmd = build_ffmpeg_cmd(stream_url, video_file, has_logo)
-
-        print("🚀 Starting continuous ffmpeg pipeline…")
-        proc = subprocess.Popen(cmd)
-
-        try:
-            rc = proc.wait()
-        except KeyboardInterrupt:
-            print("🛑 Interrupted. Stopping.")
-            proc.terminate()
-            break
-
-        print(f"⚠️ ffmpeg exited (code {rc}). Restarting in 5s…")
+        cmd = build_ffmpeg_cmd(url, video, has_logo)
+        watchdog_ffmpeg(cmd)
         time.sleep(5)
+
 
 if __name__ == "__main__":
     main()
