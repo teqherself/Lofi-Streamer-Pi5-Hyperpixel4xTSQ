@@ -182,9 +182,13 @@ def write_nowplaying(track: Path):
 # ---------- BUILD CONCAT ----------
 def build_concat(tracks, out):
     random.shuffle(tracks)
-    out.write_text(
-        "\n".join(f"file '{str(t).replace(\"'\", r\"\\'\")}'" for t in tracks)
-    )
+    safe_lines = []
+for t in tracks:
+    safe = str(t).replace("'", "'\\''")
+    safe_lines.append(f"file '{safe}'")
+
+out.write_text("\n".join(safe_lines))
+
     print(f"📝 Playlist compiled: {out}")
 
 
