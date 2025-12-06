@@ -20,6 +20,7 @@ This streamer:
 
 Default logo used:
     /home/<USER>/LofiStream/Logo/picam.png
+    We used a 300p x 67p png on our channel. 
 
 How to change logo:
 1. Replace picam.png with your own PNG.
