@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ---------------------------------------------------------
- LOFI STREAMER v8.2.4 — MASTER CONFIG + WATCHDOG EDITION
+ LOFI STREAMER v8.2.7 — MASTER CONFIG STABLE RELEASE
  GENDEMIK DIGITAL — Susan Build
 ---------------------------------------------------------
 """
@@ -11,9 +11,8 @@ import time
 import random
 import subprocess
 from pathlib import Path
-from typing import List
 
-VERSION = "8.2.4-master-config-watchdog"
+VERSION = "8.2.7-master-stable"
 
 SETTINGS = {
     "STREAM_URL": "",
@@ -42,33 +41,60 @@ WATCHDOG_FILE = Path("/tmp/stream_watchdog.txt")
 
 def load_config():
     if not CONFIG_FILE.exists():
-        print("❌ Missing config — using defaults")
+        print("❌ Missing config — defaults used")
         return
 
     for line in CONFIG_FILE.read_text().splitlines():
         if "=" not in line or line.startswith("#"):
             continue
+        
         key, val = line.split("=", 1)
         key, val = key.strip(), val.strip()
+        
         if key in SETTINGS:
             SETTINGS[key] = val
 
+    # Cast numeric settings to integers
+    SETTINGS["WIDTH"] = int(SETTINGS["WIDTH"])
+    SETTINGS["HEIGHT"] = int(SETTINGS["HEIGHT"])
+    SETTINGS["FONT_SIZE"] = int(SETTINGS["FONT_SIZE"])
+    SETTINGS["FONT_SHADOW"] = int(SETTINGS["FONT_SHADOW"])
+    SETTINGS["LOGO_PADDING"] = int(SETTINGS["LOGO_PADDING"])
+    SETTINGS["TEXT_PADDING"] = int(SETTINGS["TEXT_PADDING"])
+
     print("\n✨ CONFIG LOADED:")
     for k, v in SETTINGS.items():
-        print("   ", k, "=", v)
+        print(f"   {k} = {v}")
     print("")
 
 
+def load_tracks():
+    valid_exts = (".mp3", ".wav", ".flac", ".m4a")
+    tracks = [t for t in PLAYLIST_DIR.iterdir() if t.suffix.lower() in valid_exts]
+    tracks = [t for t in tracks if t.stat().st_size > 1000]
+    random.shuffle(tracks)
+    print(f"🎶 Valid tracks: {len(tracks)}")
+    return tracks
+
+
+def write_nowplaying(track):
+    NOWPLAYING_FILE.write_text(track.stem.replace(":", r"\:"))
+    WATCHDOG_FILE.write_text(str(time.time()))
+
+
+def build_concat(tracks):
+    with open(CONCAT_FILE, "w") as f:
+        for t in tracks:
+            f.write(f"file '{t}'\n")
+
+
 def build_ffmpeg_cmd(tracks):
-    width = SETTINGS["WIDTH"]
-    height = SETTINGS["HEIGHT"]
+    w = SETTINGS["WIDTH"]
+    h = SETTINGS["HEIGHT"]
 
     logo_path = LOGO_DIR / SETTINGS["LOGO"]
     video_path = VIDEO_DIR / SETTINGS["VIDEO"]
 
-    # ----------------------------
-    # INPUT SETUP IN SAFE ORDER
-    # ----------------------------
     cmd = [
         "ffmpeg",
         "-nostdin",
@@ -76,15 +102,13 @@ def build_ffmpeg_cmd(tracks):
         "-loglevel", "warning",
     ]
 
-    # #1 VIDEO INPUT
     if video_path.exists():
         cmd += ["-stream_loop", "-1", "-i", str(video_path)]
-        video_label = "0:v"
+        vid_label = "0:v"
     else:
-        cmd += ["-f", "lavfi", "-i", f"color=black:s={width}x{height}:r=25"]
-        video_label = "0:v"
+        cmd += ["-f", "lavfi", "-i", f"color=black:s={w}x{h}:r=25"]
+        vid_label = "0:v"
 
-    # #2 AUDIO INPUT
     cmd += [
         "-re",
         "-f", "concat",
@@ -92,46 +116,33 @@ def build_ffmpeg_cmd(tracks):
         "-i", str(CONCAT_FILE),
     ]
 
-    # #3 LOGO INPUT (optional)
     have_logo = logo_path.exists()
+
     if have_logo:
         cmd += ["-loop", "1", "-i", str(logo_path)]
-
-    # ----------------------------
-    # FILTERS (LOGIC CHANGES BELOW)
-    # ----------------------------
-    if have_logo:
-        # logo is on index 2:v
-        logo_chain = (
-            f"[base][2:v]overlay=W-w-{SETTINGS['LOGO_PADDING']}:{SETTINGS['LOGO_PADDING']}[vlogo]"
-        )
+        logo_chain = f"[base][2:v]overlay=W-w-{SETTINGS['LOGO_PADDING']}:{SETTINGS['LOGO_PADDING']}[vlogo]"
     else:
         logo_chain = "[base]copy[vlogo]"
 
     filter_chain = f"""
-        [{video_label}]scale={width}:{height},format=yuv420p[base];
+        [{vid_label}]scale={w}:{h},format=yuv420p[base];
         [1:a]asplit=2[a0][s];
         {logo_chain};
-        [s]showfreqs=s={int(width)//5}x120[bar];
-        [vlogo][bar]overlay=45:{int(height)-140}[v2];
+        [s]showfreqs=s={w//5}x120[bar];
+        [vlogo][bar]overlay=45:{h-140}[v2];
         [v2]drawtext=textfile='{NOWPLAYING_FILE}':reload=1:
             font=Arial:fontsize={SETTINGS['FONT_SIZE']}:
             x=w-tw-{SETTINGS['TEXT_PADDING']}:
-            y={int(height)-int(SETTINGS['FONT_SIZE'])-20}:
+            y={h-SETTINGS['FONT_SIZE']-20}:
             fontcolor={SETTINGS['FONT_COLOR']}:
             shadowcolor=black:shadowx={SETTINGS['FONT_SHADOW']}:
             shadowy={SETTINGS['FONT_SHADOW']}[vout]
     """.replace("\n", " ")
 
-    # NOW MAP STREAMS — AFTER inputs declared
     cmd += [
         "-filter_complex", filter_chain,
-
-        # output selection
         "-map", "[vout]",
         "-map", "[a0]",
-
-        # encoding
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-pix_fmt", "yuv420p",
@@ -139,10 +150,8 @@ def build_ffmpeg_cmd(tracks):
         "-g", "60",
         "-keyint_min", "60",
         "-sc_threshold", "0",
-
         "-c:a", "aac",
         "-b:a", SETTINGS["AUDIO_BITRATE"],
-
         "-f", "flv",
         SETTINGS["STREAM_URL"],
     ]
@@ -151,10 +160,6 @@ def build_ffmpeg_cmd(tracks):
 
 
 def stall_watchdog():
-    """
-    If audio isn’t progressing, nowplaying never updates.
-    If timestamp > 120 seconds old → reset stream.
-    """
     try:
         ts = float(WATCHDOG_FILE.read_text().strip())
         return time.time() - ts < 120
@@ -166,7 +171,6 @@ def run_loop():
     while True:
         tracks = load_tracks()
         if not tracks:
-            print("❌ NO TRACKS FOUND — sleeping")
             time.sleep(10)
             continue
 
@@ -174,30 +178,26 @@ def run_loop():
         write_nowplaying(tracks[0])
 
         cmd = build_ffmpeg_cmd(tracks)
-        print("▶ Starting ffmpeg…\n")
+        print("▶ Starting ffmpeg…")
 
         proc = subprocess.Popen(cmd)
 
         while proc.poll() is None:
             time.sleep(5)
-
             if not stall_watchdog():
-                print("⚠️ AUDIO STALL DETECTED — restarting cleanly")
+                print("⚠️ Stalled — restarting ffmpeg pipeline")
                 proc.kill()
                 break
 
-        print("🔄 Restarting pipeline\n")
         time.sleep(3)
 
 
 def main():
-    print(f"\n🌙 LOFI STREAMER v{VERSION}")
+    print(f"\n🌙 LOFI STREAMER v{VERSION}\n")
     load_config()
-
     if not SETTINGS["STREAM_URL"]:
-        print("❌ STREAM_URL missing — aborting.")
+        print("❌ STREAM_URL missing — abort")
         return
-
     run_loop()
 
 
