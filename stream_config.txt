@@ -1,11 +1,11 @@
 # -------- STREAM TARGET -- can be used for most rtmp injection --------
 STREAM_URL=rtmp://a.rtmp.youtube.com/live2/add_your_key
 
-# -------- BRANDING --------
-LOGO=picam.png
+# -------- BRANDING -- see notes in the lofi-streamer.py script --------
+LOGO=your_logo.png
 
 # -------- VIDEO BACKGROUND (optional) --------
-VIDEO=Lofi3.mp4
+VIDEO=your_file.mp4
 
 # -------- VISUAL APPEARANCE --------
 FONT_SIZE=34
