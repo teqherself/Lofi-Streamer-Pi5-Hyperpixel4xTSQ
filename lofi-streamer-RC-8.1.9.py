@@ -81,15 +81,15 @@ def build_concat(tracks):
     with open(CONCAT_FILE, "w") as f:
         for t in tracks:
             f.write(f"file '{t}'\n")
+        
 
-
-def build_ffmpeg_cmd(tracks):
+   def build_ffmpeg_cmd(tracks):
     width = SETTINGS["WIDTH"]
     height = SETTINGS["HEIGHT"]
+
     logo_path = LOGO_DIR / SETTINGS["LOGO"]
     video_path = VIDEO_DIR / SETTINGS["VIDEO"]
 
-    # -------- VIDEO INPUT --------
     if video_path.exists():
         video_input = ["-stream_loop", "-1", "-i", str(video_path)]
         video_label = "0:v"
@@ -103,22 +103,31 @@ def build_ffmpeg_cmd(tracks):
         "-hide_banner",
         "-loglevel", "warning",
         *video_input,
-        "-thread_queue_size", "1024",
+
+        # AUDIO input — FORCED
         "-re",
         "-f", "concat",
         "-safe", "0",
         "-i", str(CONCAT_FILE),
+
+        # Very important — ignore audio from MP4
+        "-map", "0:v",
+        "-map", "1:a",
+
+        "-thread_queue_size", "1024",
     ]
 
     # ---------------------------------------------------------
     # Build filter chain SAFELY depending on whether logo exists
     # ---------------------------------------------------------
-
+    
     have_logo = logo_path.exists()
     if have_logo:
         cmd += ["-loop", "1", "-i", str(logo_path)]
 
-        logo_chain = f"[base][2:v]overlay=W-w-{SETTINGS['LOGO_PADDING']}:{SETTINGS['LOGO_PADDING']}[vlogo]"
+        logo_chain = (
+            f"[base][2:v]overlay=W-w-{SETTINGS['LOGO_PADDING']}:{SETTINGS['LOGO_PADDING']}[vlogo]"
+        )
         map_video = "[vout]"
     else:
         logo_chain = "[base]copy[vlogo]"
@@ -141,8 +150,6 @@ def build_ffmpeg_cmd(tracks):
 
     cmd += [
         "-filter_complex", filter_chain,
-        "-map", map_video,
-        "-map", "[a0]",
         "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
         "-b:v", SETTINGS["VIDEO_BITRATE"],
         "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
@@ -152,6 +159,7 @@ def build_ffmpeg_cmd(tracks):
     ]
 
     return cmd
+
 
 
 def stall_watchdog():
