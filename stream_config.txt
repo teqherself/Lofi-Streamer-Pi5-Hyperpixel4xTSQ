@@ -1,0 +1,25 @@
+# -------- STREAM TARGET -- can be used for most rtmp injection --------
+STREAM_URL=rtmp://a.rtmp.youtube.com/live2/add_your_key
+
+# -------- BRANDING --------
+LOGO=picam.png
+
+# -------- VIDEO BACKGROUND (optional) --------
+VIDEO=Lofi3.mp4
+
+# -------- VISUAL APPEARANCE --------
+FONT_SIZE=34
+FONT_COLOR=white
+FONT_SHADOW=2
+
+# -------- RESOLUTION --------
+WIDTH=1280
+HEIGHT=720
+
+# -------- ENCODING --------
+VIDEO_BITRATE=2500k
+AUDIO_BITRATE=160k
+
+# -------- POSITIONING --------
+LOGO_PADDING=40
+TEXT_PADDING=40
