@@ -1,43 +1,20 @@
 #!/usr/bin/env python3
 """
 ---------------------------------------------------------
- LOFI STREAMER v8.1.9 — MASTER CONFIG EDITION
+ LOFI STREAMER v8.2.4 — MASTER CONFIG + WATCHDOG EDITION
  GENDEMIK DIGITAL — Susan Build
----------------------------------------------------------
-
- Single Config File Controls Everything:
- ------------------------------------------------
- ~/LofiStream/stream_config.txt
-
- Accepted keys:
- STREAM_URL=
- FONT_SIZE=
- FONT_COLOR=
- FONT_SHADOW=
- LOGO=
- VIDEO=
- WIDTH=
- HEIGHT=
- VIDEO_BITRATE=
- AUDIO_BITRATE=
- LOGO_PADDING=
- TEXT_PADDING=
-
- Fallback defaults exist if file missing.
 ---------------------------------------------------------
 """
 
 import os
 import time
 import random
-import socket
 import subprocess
 from pathlib import Path
 from typing import List
 
-VERSION = "8.1.9-master-config"
+VERSION = "8.2.4-master-config-watchdog"
 
-# Default safe baseline
 SETTINGS = {
     "STREAM_URL": "",
     "LOGO": "picam.png",
@@ -53,178 +30,179 @@ SETTINGS = {
     "TEXT_PADDING": "40",
 }
 
-
-def detect_base():
-    base = Path(__file__).resolve().parent
-    if base.name.lower() == "servers":
-        return base.parent
-    return base
-
-
-BASE_DIR = detect_base()
+BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_FILE = BASE_DIR / "stream_config.txt"
-
 PLAYLIST_DIR = BASE_DIR / "Sounds"
 LOGO_DIR = BASE_DIR / "Logo"
 VIDEO_DIR = BASE_DIR / "Videos"
 CONCAT_FILE = BASE_DIR / "lofi_concat.txt"
 NOWPLAYING_FILE = Path("/tmp/nowplaying.txt")
+WATCHDOG_FILE = Path("/tmp/stream_watchdog.txt")
 
 
 def load_config():
-    print("⚙️ Loading config...")
-
     if not CONFIG_FILE.exists():
-        print("❌ No config found — using fallback defaults")
+        print("❌ Missing config — using defaults")
         return
 
     for line in CONFIG_FILE.read_text().splitlines():
         if "=" not in line or line.startswith("#"):
             continue
-
         key, val = line.split("=", 1)
-        key = key.strip().upper()
-        val = val.strip()
-
+        key, val = key.strip(), val.strip()
         if key in SETTINGS:
             SETTINGS[key] = val
 
-    print("✨ Config applied:")
+    print("\n✨ CONFIG LOADED:")
     for k, v in SETTINGS.items():
-        print(f"   {k} = {v}")
+        print("   ", k, "=", v)
     print("")
 
 
-def wait_for_pi_ready():
-    print("⏳ Checking system readiness...")
-
-    for _ in range(30):
-        if os.system("ping -c1 1.1.1.1 >/dev/null 2>&1") == 0:
-            break
-        time.sleep(2)
-
-    print("💚 Pi Ready\n")
-
-
 def load_tracks():
-    valid = (".mp3", ".wav", ".flac", ".m4a")
-    tracks = [t for t in PLAYLIST_DIR.iterdir() if t.suffix.lower() in valid]
+    valid_exts = (".mp3", ".wav", ".flac", ".m4a")
+    tracks = [t for t in PLAYLIST_DIR.iterdir() if t.suffix.lower() in valid_exts]
+
+    tracks = [t for t in tracks if t.stat().st_size > 1000]  # filter corrupt audio
+
     random.shuffle(tracks)
-    print(f"🎶 Loaded {len(tracks)} tracks")
+    print(f"🎶 Valid tracks: {len(tracks)}")
+
     return tracks
 
 
 def write_nowplaying(track: Path):
-    NOWPLAYING_FILE.write_text(track.stem.replace(":", r"\:"))
+    txt = track.stem.replace(":", r"\:")
+    NOWPLAYING_FILE.write_text(txt)
+    WATCHDOG_FILE.write_text(str(time.time()))
 
 
 def build_concat(tracks):
     with open(CONCAT_FILE, "w") as f:
         for t in tracks:
-            f.write(f"file '{t.as_posix()}'\n")
+            f.write(f"file '{t}'\n")
 
 
-def build_ffmpeg_cmd():
+def build_ffmpeg_cmd(tracks):
     width = SETTINGS["WIDTH"]
     height = SETTINGS["HEIGHT"]
-
-    video_bitrate = SETTINGS["VIDEO_BITRATE"]
-    audio_bitrate = SETTINGS["AUDIO_BITRATE"]
-
-    logo_padding = SETTINGS["LOGO_PADDING"]
-    text_padding = SETTINGS["TEXT_PADDING"]
-
-    font_size = SETTINGS["FONT_SIZE"]
-    font_color = SETTINGS["FONT_COLOR"]
-    font_shadow = SETTINGS["FONT_SHADOW"]
-
     logo_path = LOGO_DIR / SETTINGS["LOGO"]
-    video_path = VIDEO_DIR / SETTINGS["VIDEO"] if SETTINGS["VIDEO"] else None
+    video_path = VIDEO_DIR / SETTINGS["VIDEO"]
 
-    vid_in = (
-        ["-stream_loop", "-1", "-i", str(video_path)]
-        if video_path and video_path.exists()
-        else ["-f", "lavfi", "-i", f"color=black:s={width}x{height}:r=25"]
-    )
+    # -------- VIDEO INPUT --------
+    if video_path.exists():
+        video_input = ["-stream_loop", "-1", "-i", str(video_path)]
+        video_label = "0:v"
+    else:
+        video_input = ["-f", "lavfi", "-i", f"color=black:s={width}x{height}:r=25"]
+        video_label = "0:v"
 
     cmd = [
         "ffmpeg",
         "-nostdin",
         "-hide_banner",
         "-loglevel", "warning",
-        *vid_in,
+        *video_input,
+        "-thread_queue_size", "1024",
         "-re",
         "-f", "concat",
         "-safe", "0",
         "-i", str(CONCAT_FILE),
     ]
 
-    if logo_path.exists():
+    # ---------------------------------------------------------
+    # Build filter chain SAFELY depending on whether logo exists
+    # ---------------------------------------------------------
+
+    have_logo = logo_path.exists()
+    if have_logo:
         cmd += ["-loop", "1", "-i", str(logo_path)]
 
-        logo_overlay = (
-            f"[base][2:v]overlay=W-w-{logo_padding}:{logo_padding}[vlogo]"
-        )
+        logo_chain = f"[base][2:v]overlay=W-w-{SETTINGS['LOGO_PADDING']}:{SETTINGS['LOGO_PADDING']}[vlogo]"
+        map_video = "[vout]"
     else:
-        logo_overlay = "[base]copy[vlogo]"
+        logo_chain = "[base]copy[vlogo]"
+        map_video = "[vout]"
 
     filter_chain = f"""
-        [0:v]scale={width}x{height},format=yuv420p[base];
+        [{video_label}]scale={width}:{height},format=yuv420p[base];
         [1:a]asplit=2[a0][s];
-        {logo_overlay};
+        {logo_chain};
         [s]showfreqs=s={int(width)//5}x120[bar];
         [vlogo][bar]overlay=45:{int(height)-140}[v2];
         [v2]drawtext=textfile='{NOWPLAYING_FILE}':reload=1:
-            fontsize={font_size}:font=Arial:fontcolor={font_color}:
-            shadowcolor=black:shadowx={font_shadow}:shadowy={font_shadow}:
-            x=w-tw-{text_padding}:y={int(height)-int(font_size)-20}[vout]
-    """
+            font=Arial:fontsize={SETTINGS['FONT_SIZE']}:
+            x=w-tw-{SETTINGS['TEXT_PADDING']}:
+            y={int(height)-int(SETTINGS['FONT_SIZE'])-20}:
+            fontcolor={SETTINGS['FONT_COLOR']}:
+            shadowcolor=black:shadowx={SETTINGS['FONT_SHADOW']}:
+            shadowy={SETTINGS['FONT_SHADOW']}[vout]
+    """.replace("\n", " ")
 
     cmd += [
-        "-filter_complex", filter_chain.replace("\n", " "),
-        "-map", "[vout]",
+        "-filter_complex", filter_chain,
+        "-map", map_video,
         "-map", "[a0]",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-pix_fmt", "yuv420p",
-        "-b:v", video_bitrate,
-        "-g", "60",
-        "-keyint_min", "60",
-        "-sc_threshold", "0",
-        "-c:a", "aac",
-        "-b:a", audio_bitrate,
+        "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+        "-b:v", SETTINGS["VIDEO_BITRATE"],
+        "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
+        "-c:a", "aac", "-b:a", SETTINGS["AUDIO_BITRATE"],
         "-f", "flv",
-        SETTINGS["STREAM_URL"],  # now sourced from config!
+        SETTINGS["STREAM_URL"],
     ]
 
     return cmd
 
 
-def stream_forever():
+def stall_watchdog():
+    """
+    If audio isn’t progressing, nowplaying never updates.
+    If timestamp > 120 seconds old → reset stream.
+    """
+    try:
+        ts = float(WATCHDOG_FILE.read_text().strip())
+        return time.time() - ts < 120
+    except:
+        return False
 
+
+def run_loop():
     while True:
         tracks = load_tracks()
+        if not tracks:
+            print("❌ NO TRACKS FOUND — sleeping")
+            time.sleep(10)
+            continue
+
         build_concat(tracks)
         write_nowplaying(tracks[0])
 
-        cmd = build_ffmpeg_cmd()
-        proc = subprocess.Popen(cmd)
-        proc.wait()
+        cmd = build_ffmpeg_cmd(tracks)
+        print("▶ Starting ffmpeg…\n")
 
-        print("⚠️ Streaming cycle ended — restarting\n")
-        time.sleep(4)
+        proc = subprocess.Popen(cmd)
+
+        while proc.poll() is None:
+            time.sleep(5)
+
+            if not stall_watchdog():
+                print("⚠️ AUDIO STALL DETECTED — restarting cleanly")
+                proc.kill()
+                break
+
+        print("🔄 Restarting pipeline\n")
+        time.sleep(3)
 
 
 def main():
-    print(f"\n🌙 LOFI STREAMER v{VERSION}\n")
+    print(f"\n🌙 LOFI STREAMER v{VERSION}")
     load_config()
-    wait_for_pi_ready()
 
     if not SETTINGS["STREAM_URL"]:
-        print("❌ STREAM_URL missing — aborting")
+        print("❌ STREAM_URL missing — aborting.")
         return
 
-    stream_forever()
+    run_loop()
 
 
 if __name__ == "__main__":
