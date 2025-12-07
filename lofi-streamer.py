@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ---------------------------------------------------------
- LOFI STREAMER v8.1 — CONTINUOUS EDITION  (GENDEMIK DIGITAL)
+ LOFI STREAMER v8.1 — CONTINUOUS EDITION -- PiCam MCR
 ---------------------------------------------------------
 
 This streamer:
