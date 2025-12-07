@@ -59,79 +59,54 @@ def load_config():
     print("")
 
 
-def load_tracks():
-    valid_exts = (".mp3", ".wav", ".flac", ".m4a")
-    tracks = [t for t in PLAYLIST_DIR.iterdir() if t.suffix.lower() in valid_exts]
-
-    tracks = [t for t in tracks if t.stat().st_size > 1000]  # filter corrupt audio
-
-    random.shuffle(tracks)
-    print(f"🎶 Valid tracks: {len(tracks)}")
-
-    return tracks
-
-
-def write_nowplaying(track: Path):
-    txt = track.stem.replace(":", r"\:")
-    NOWPLAYING_FILE.write_text(txt)
-    WATCHDOG_FILE.write_text(str(time.time()))
-
-
-def build_concat(tracks):
-    with open(CONCAT_FILE, "w") as f:
-        for t in tracks:
-            f.write(f"file '{t}'\n")
-        
-
-   def build_ffmpeg_cmd(tracks):
+def build_ffmpeg_cmd(tracks):
     width = SETTINGS["WIDTH"]
     height = SETTINGS["HEIGHT"]
 
     logo_path = LOGO_DIR / SETTINGS["LOGO"]
     video_path = VIDEO_DIR / SETTINGS["VIDEO"]
 
-    if video_path.exists():
-        video_input = ["-stream_loop", "-1", "-i", str(video_path)]
-        video_label = "0:v"
-    else:
-        video_input = ["-f", "lavfi", "-i", f"color=black:s={width}x{height}:r=25"]
-        video_label = "0:v"
-
+    # ----------------------------
+    # INPUT SETUP IN SAFE ORDER
+    # ----------------------------
     cmd = [
         "ffmpeg",
         "-nostdin",
         "-hide_banner",
         "-loglevel", "warning",
-        *video_input,
+    ]
 
-        # AUDIO input — FORCED
+    # #1 VIDEO INPUT
+    if video_path.exists():
+        cmd += ["-stream_loop", "-1", "-i", str(video_path)]
+        video_label = "0:v"
+    else:
+        cmd += ["-f", "lavfi", "-i", f"color=black:s={width}x{height}:r=25"]
+        video_label = "0:v"
+
+    # #2 AUDIO INPUT
+    cmd += [
         "-re",
         "-f", "concat",
         "-safe", "0",
         "-i", str(CONCAT_FILE),
-
-        # Very important — ignore audio from MP4
-        "-map", "0:v",
-        "-map", "1:a",
-
-        "-thread_queue_size", "1024",
     ]
 
-    # ---------------------------------------------------------
-    # Build filter chain SAFELY depending on whether logo exists
-    # ---------------------------------------------------------
-    
+    # #3 LOGO INPUT (optional)
     have_logo = logo_path.exists()
     if have_logo:
         cmd += ["-loop", "1", "-i", str(logo_path)]
 
+    # ----------------------------
+    # FILTERS (LOGIC CHANGES BELOW)
+    # ----------------------------
+    if have_logo:
+        # logo is on index 2:v
         logo_chain = (
             f"[base][2:v]overlay=W-w-{SETTINGS['LOGO_PADDING']}:{SETTINGS['LOGO_PADDING']}[vlogo]"
         )
-        map_video = "[vout]"
     else:
         logo_chain = "[base]copy[vlogo]"
-        map_video = "[vout]"
 
     filter_chain = f"""
         [{video_label}]scale={width}:{height},format=yuv420p[base];
@@ -148,18 +123,31 @@ def build_concat(tracks):
             shadowy={SETTINGS['FONT_SHADOW']}[vout]
     """.replace("\n", " ")
 
+    # NOW MAP STREAMS — AFTER inputs declared
     cmd += [
         "-filter_complex", filter_chain,
-        "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p",
+
+        # output selection
+        "-map", "[vout]",
+        "-map", "[a0]",
+
+        # encoding
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
         "-b:v", SETTINGS["VIDEO_BITRATE"],
-        "-g", "60", "-keyint_min", "60", "-sc_threshold", "0",
-        "-c:a", "aac", "-b:a", SETTINGS["AUDIO_BITRATE"],
+        "-g", "60",
+        "-keyint_min", "60",
+        "-sc_threshold", "0",
+
+        "-c:a", "aac",
+        "-b:a", SETTINGS["AUDIO_BITRATE"],
+
         "-f", "flv",
         SETTINGS["STREAM_URL"],
     ]
 
     return cmd
-
 
 
 def stall_watchdog():
