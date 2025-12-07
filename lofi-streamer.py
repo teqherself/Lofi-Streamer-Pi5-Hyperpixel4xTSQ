@@ -1,347 +1,225 @@
 #!/usr/bin/env python3
 """
 ---------------------------------------------------------
- LOFI STREAMER v8.1 — CONTINUOUS EDITION -- PiCam MCR
+ LOFI STREAMER v8.2.7 — MASTER CONFIG FINAL BUILD
+ GENDEMIK DIGITAL — Susan Logging Edition
 ---------------------------------------------------------
-
-This streamer:
-
-✓ Streams continuously without restarting FFmpeg per track  
-✓ Randomises track order on each start  
-✓ Displays a "Now Playing" text overlay  
-✓ Shows an audio frequency bar visualisation  
-✓ Supports a static looping video background  
-✓ Supports a static overlay logo image in top-right position  
-✓ Designed for Raspberry Pi continuous streaming  
-
----------------------------------------------------------
-           CUSTOM LOGO INFORMATION FOR END-USERS
----------------------------------------------------------
-
-Default logo used:
-    /home/<USER>/LofiStream/Logo/picam.png
-    We used a 300p x 67p png on our channel. 
-
-How to change logo:
-1. Replace picam.png with your own PNG.
-   For example: mybrand.png
-
-2. Rename your file to:
-       picam.png
-   OR modify this line below:
-       FFMPEG_LOGO = <path>
-
-Recommended logo file format:
-✓ PNG with transparency  
-✓ Square or near-square aspect looks best  
-✓ Avoid JPG (no transparency)
-
-RECOMMENDED MAX SIZE:
-→ 600px width or height (FFmpeg will scale internally if needed)
-
-LOGO SAFETY RULE:
-If the logo is extremely large (e.g. >2000px), FFmpeg may consume
-excess memory. Resize to under 1000px on longest side before use.
-
-----------------------------------------------------------------
 """
 
 import os
 import time
 import random
-import socket
-import threading
 import subprocess
 from pathlib import Path
-from typing import List
+
+VERSION = "8.2.7-master-logging"
+
+SETTINGS = {
+    "STREAM_URL": "",
+    "LOGO": "picam.png",
+    "VIDEO": "",
+    "FONT_SIZE": "36",
+    "FONT_COLOR": "white",
+    "FONT_SHADOW": "2",
+    "WIDTH": "1280",
+    "HEIGHT": "720",
+    "VIDEO_BITRATE": "2500k",
+    "AUDIO_BITRATE": "160k",
+    "LOGO_PADDING": "40",
+    "TEXT_PADDING": "40",
+}
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+CONFIG_FILE = BASE_DIR / "stream_config.txt"
+PLAYLIST_DIR = BASE_DIR / "Sounds"
+LOGO_DIR = BASE_DIR / "Logo"
+VIDEO_DIR = BASE_DIR / "Videos"
+CONCAT_FILE = BASE_DIR / "lofi_concat.txt"
+NOWPLAYING_FILE = Path("/tmp/nowplaying.txt")
+WATCHDOG_FILE = Path("/tmp/stream_watchdog.txt")
+LOG_FILE = BASE_DIR / "ffmpeg.log"
 
 
-# -------------------------------------------------------
-# VERSION
-# -------------------------------------------------------
-VERSION = "8.1-continuous"
+def load_config():
+    if CONFIG_FILE.exists():
+        for line in CONFIG_FILE.read_text().strip().splitlines():
+            if "=" not in line or line.startswith("#"):
+                continue
+            key, val = line.split("=", 1)
+            key = key.strip()
+            val = val.strip()
+            if key in SETTINGS:
+                SETTINGS[key] = val
 
+    for k in ["WIDTH", "HEIGHT", "FONT_SIZE", "FONT_SHADOW", "LOGO_PADDING", "TEXT_PADDING"]:
+        SETTINGS[k] = int(SETTINGS[k])
 
-# -------------------------------------------------------
-# RESOLUTION + VISUAL CONSTANTS
-# -------------------------------------------------------
-OUTPUT_W = 1280
-OUTPUT_H = 720
-
-VU_SEG_WIDTH = 16
-VU_HEIGHT = 120
-
-LOGO_PADDING = 40
-TEXT_PADDING = 40
-
-DEFAULT_NOWPLAYING_FILE = Path("/tmp/nowplaying.txt")
-
-
-# -------------------------------------------------------
-# BASE DIRECTORY DISCOVERY
-# -------------------------------------------------------
-def _detect_base_dir() -> Path:
-    base = Path(__file__).resolve().parent
-    return base.parent if base.name.lower() == "servers" else base
-
-
-BASE_DIR = _detect_base_dir()
-
-
-# -------------------------------------------------------
-# ENV HELPERS
-# -------------------------------------------------------
-def _env_path(name: str, default: Path) -> Path:
-    raw = Path(os.environ.get(name, str(default))).expanduser()
-    try:
-        return raw.resolve(strict=False)
-    except Exception:
-        return raw
-
-
-# -------------------------------------------------------
-# FILE PATHS
-# -------------------------------------------------------
-PLAYLIST_DIR = _env_path("LOFI_PLAYLIST_DIR", BASE_DIR / "Sounds")
-LOGO_DIR = _env_path("LOFI_BRAND_DIR", BASE_DIR / "Logo")
-VIDEO_DIR = _env_path("LOFI_VIDEO_DIR", BASE_DIR / "Videos")
-
-STREAM_URL_FILE = _env_path("LOFI_STREAM_URL_FILE", BASE_DIR / "stream_url.txt")
-STREAM_URL_ENV = os.environ.get("LOFI_YOUTUBE_URL", "")
-
-# >>> DEFAULT LOGO CHANGED HERE <<<
-FFMPEG_LOGO = _env_path("LOFI_BRAND_IMAGE", LOGO_DIR / "picam.png") # >>> DEFAULT LOGO CHANGED HERE <<<
-
-VIDEO_FILE = _env_path("LOFI_VIDEO_FILE", VIDEO_DIR / "Lofi3.mp4")
-NOWPLAYING_FILE = _env_path("LOFI_NOWPLAYING_FILE", DEFAULT_NOWPLAYING_FILE)
-CONCAT_PLAYLIST_FILE = _env_path("LOFI_CONCAT_FILE", BASE_DIR / "lofi_concat.txt")
-
-CHECK_HOST = "a.rtmp.youtube.com"
-CHECK_PORT = 1935
-
-
-# -------------------------------------------------------
-# RASPBERRY PI READINESS CHECK
-# -------------------------------------------------------
-def wait_for_pi_ready():
-    print("⏳ Waiting for Pi to be fully ready...")
-
-    for _ in range(60):
-        if os.system("ping -c1 1.1.1.1 >/dev/null") == 0:
-            print("🌐 Internet OK")
-            break
-        time.sleep(2)
-
-    for _ in range(60):
-        try:
-            socket.gethostbyname("google.com")
-            print("🔍 DNS OK")
-            break
-        except:
-            time.sleep(2)
-
-    for _ in range(120):
-        try:
-            yr = int(subprocess.check_output(["date", "+%Y"]).decode().strip())
-        except:
-            yr = 1970
-        if yr >= 2023:
-            print("⏱ Time synced")
-            break
-        time.sleep(2)
-
-    print("✅ Pi Ready\n")
-
-
-# -------------------------------------------------------
-# TRACKS
-# -------------------------------------------------------
-def _is_valid_audio(t: Path):
-    if t.name.startswith("."):
-        return False
-    return t.suffix.lower() in (".mp3", ".wav", ".flac", ".m4a")
+    print("\n✨ CONFIG LOADED:")
+    for k, v in SETTINGS.items():
+        print(f"   {k} = {v}")
+    print("")
 
 
 def load_tracks():
-    if not PLAYLIST_DIR.exists():
-        print("❌ Playlist folder missing")
-        return []
-    tracks = [t for t in PLAYLIST_DIR.iterdir() if _is_valid_audio(t)]
-    print(f"🎶 Loaded {len(tracks)} tracks")
+    valid_ext = (".mp3", ".wav", ".flac", ".m4a")
+    tracks = [t for t in PLAYLIST_DIR.glob("*") if t.suffix.lower() in valid_ext]
+    tracks = [t for t in tracks if t.stat().st_size > 1000]
+    random.shuffle(tracks)
+    print(f"🎶 Valid tracks: {len(tracks)}")
     return tracks
 
 
-# -------------------------------------------------------
-# STREAM URL LOADING
-# -------------------------------------------------------
-def load_stream_url():
-    if STREAM_URL_ENV:
-        print("🔐 Using RTMP from env")
-        return STREAM_URL_ENV.strip()
-
-    if STREAM_URL_FILE.exists():
-        url = STREAM_URL_FILE.read_text().strip()
-        print(f"📄 RTMP URL = {url}")
-        return url
-
-    print("❌ No RTMP URL found")
-    return ""
-
-
-# -------------------------------------------------------
-# NOW PLAYING TEXT
-# -------------------------------------------------------
-def _escape_drawtext(s: str):
-    return s.replace(":", r"\:")
-
-
 def write_nowplaying(track):
-    try:
-        NOWPLAYING_FILE.write_text(_escape_drawtext(track.stem))
-    except:
-        pass
+    NOWPLAYING_FILE.write_text(track.stem.replace(":", r"\:"))
+    WATCHDOG_FILE.write_text(str(time.time()))
 
 
-# -------------------------------------------------------
-# CONCAT FILE
-# -------------------------------------------------------
-def build_concat(tracks, out):
-    random.shuffle(tracks)
-    safe_lines = []
-    for t in tracks:
-        safe = str(t).replace("'", "'\\''")
-        safe_lines.append(f"file '{safe}'")
-    out.write_text("\n".join(safe_lines))
-    print(f"📝 Playlist compiled: {out}")
+def build_concat(tracks):
+    with open(CONCAT_FILE, "w") as f:
+        for t in tracks:
+            f.write(f"file '{t}'\n")
 
 
-# -------------------------------------------------------
-# VISUAL FILTER CHAIN
-# -------------------------------------------------------
-def _filter_chain(has_logo):
-    total_w = VU_SEG_WIDTH * 8
-    bar_x = 45
-    bar_y = OUTPUT_H - VU_HEIGHT - 25
-    text_y = OUTPUT_H - 28 - 5
+def build_ffmpeg_cmd():
+    w = SETTINGS["WIDTH"]
+    h = SETTINGS["HEIGHT"]
+    logo = LOGO_DIR / SETTINGS["LOGO"]
+    video = VIDEO_DIR / SETTINGS["VIDEO"]
 
-    np_path = NOWPLAYING_FILE.as_posix()
+    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "warning", "-re"]
 
-    base = f"[0:v]scale={OUTPUT_W}x{OUTPUT_H},format=yuv420p[v0]"
-
-    if has_logo:
-        base += f";[v0][2:v]overlay=W-w-{LOGO_PADDING}:{LOGO_PADDING}[vb]"
+    # ===== INPUT 0: VIDEO OR BLACK CANVAS =====
+    if video.exists():
+        cmd += ["-stream_loop", "-1", "-i", str(video)]
     else:
-        base += "[vb]"
+        cmd += ["-f", "lavfi", "-i", f"color=black:s={w}x{h}:r=25"]
 
-    return (
-        f"{base};"
-        f"[1:a]asplit=2[a0][avis];"
-        f"[avis]showfreqs=s={total_w}x{VU_HEIGHT}[vf];"
-        f"[vf]format=rgba,colorchannelmixer=rr=0.6:gg=0.6:bb=0.6:aa=1[vbar];"
-        f"[vb][vbar]overlay={bar_x}:{bar_y}[v1];"
-        f"[v1]drawtext=textfile='{np_path}':reload=1:"
-        f"fontcolor=white:fontsize=28:shadowcolor=black:shadowx=2:shadowy=2:"
-        f"x=w-tw-{TEXT_PADDING}:y={text_y}[vout]"
-    )
+    # ===== INPUT 1: AUDIO CONCAT =====
+    cmd += ["-f", "concat", "-safe", "0", "-i", str(CONCAT_FILE)]
 
-
-# -------------------------------------------------------
-# WATCHDOG
-# -------------------------------------------------------
-def watchdog_ffmpeg(cmd):
-    print("🚀 FFmpeg starting…")
-    proc = subprocess.Popen(cmd)
-
-    while True:
-        if proc.poll() is not None:
-            print(f"⚠️ ffmpeg exited")
-            return
-        time.sleep(5)
-
-
-# -------------------------------------------------------
-# COMMAND BUILD
-# -------------------------------------------------------
-def build_ffmpeg_cmd(url, video_file, has_logo):
-
-    video_in = (
-        ["-stream_loop", "-1", "-i", str(video_file)]
-        if video_file
-        else ["-f", "lavfi", "-i", f"color=black:s={OUTPUT_W}x{OUTPUT_H}:r=25"]
-    )
-
-    filters = _filter_chain(has_logo)
-
-    cmd = [
-        "ffmpeg",
-        "-nostdin",
-        "-hide_banner",
-        "-loglevel", "warning",
-
-        *video_in,
-
-        "-re",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", str(CONCAT_PLAYLIST_FILE),
-    ]
-
+    # ===== INPUT 2: LOGO IF EXISTS =====
+    has_logo = logo.exists()
     if has_logo:
-        cmd += ["-loop", "1", "-i", str(FFMPEG_LOGO)]
+        cmd += ["-loop", "1", "-i", str(logo)]
+
+    # ------------------------------------------------------
+    # FILTERS
+    # ------------------------------------------------------
+
+    filter_parts = []
+
+    # scale base
+    filter_parts.append(f"[0:v]scale={w}:{h},format=yuv420p[base]")
+
+    # split audio
+    filter_parts.append("[1:a]asplit=2[a_main][a_vis]")
+
+    # visualiser
+    filter_parts.append(f"[a_vis]showfreqs=s={w//4}x120[bar]")
+
+    # logo
+    if has_logo:
+        filter_parts.append(
+            f"[base][2:v]overlay=W-w-{SETTINGS['LOGO_PADDING']}:{SETTINGS['LOGO_PADDING']}[withlogo]"
+        )
+        base = "[withlogo]"
+    else:
+        base = "[base]"
+
+    # bar
+    filter_parts.append(f"{base}[bar]overlay=45:{h-160}[afterbar]")
+
+    # text
+    filter_parts.append(
+        f"[afterbar]drawtext="
+        f"textfile='{NOWPLAYING_FILE}':reload=1:"
+        f"fontsize={SETTINGS['FONT_SIZE']}:"
+        f"fontcolor={SETTINGS['FONT_COLOR']}:"
+        f"x=w-tw-{SETTINGS['TEXT_PADDING']}:"
+        f"y={h-SETTINGS['FONT_SIZE']-20}:"
+        f"shadowx={SETTINGS['FONT_SHADOW']}:"
+        f"shadowy={SETTINGS['FONT_SHADOW']}[vout]"
+    )
+
+    filter_complex = ";".join(filter_parts)
 
     cmd += [
-        "-filter_complex", filters,
+        "-filter_complex", filter_complex,
         "-map", "[vout]",
-        "-map", "[a0]",
-
+        "-map", "[a_main]",
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-pix_fmt", "yuv420p",
-        "-b:v", "2500k",
-        "-g", "60",
-        "-keyint_min", "60",
+        "-b:v", SETTINGS["VIDEO_BITRATE"],
+        "-g", "50",
+        "-keyint_min", "50",
         "-sc_threshold", "0",
-
         "-c:a", "aac",
-        "-b:a", "160k",
-
+        "-b:a", SETTINGS["AUDIO_BITRATE"],
         "-f", "flv",
-        url,
+        SETTINGS["STREAM_URL"],
     ]
 
     return cmd
 
 
-# -------------------------------------------------------
-# MAIN LOOP
-# -------------------------------------------------------
+def stalled():
+    try:
+        t = float(WATCHDOG_FILE.read_text())
+        return (time.time() - t) > 90
+    except:
+        return True
+
+
+def run_loop():
+    while True:
+        tracks = load_tracks()
+        if not tracks:
+            print("⚠ No audio files found. Waiting...")
+            time.sleep(5)
+            continue
+
+        build_concat(tracks)
+        write_nowplaying(tracks[0])
+
+        cmd = build_ffmpeg_cmd()
+
+        print("▶ Launching ffmpeg…")
+
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+
+        # STREAM LIVE LOG
+        LOG_FILE.write_text("")  # reset log
+        while process.poll() is None:
+            line = process.stdout.readline().strip()
+            if line != "":
+                print("🪵 FF:", line)
+                LOG_FILE.open("a").write(line + "\n")
+
+            time.sleep(1)
+
+            if stalled():
+                print("⚠️ Pipeline stalled — restarting encoder")
+                process.kill()
+                break
+
+        time.sleep(2)
+
+
 def main():
     print(f"\n🌙 LOFI STREAMER v{VERSION}\n")
+    load_config()
 
-    wait_for_pi_ready()
-    url = load_stream_url()
-    if not url:
+    if not SETTINGS["STREAM_URL"]:
+        print("❌ Missing STREAM_URL in stream_config.txt")
         return
 
-    tracks = load_tracks()
-    if not tracks:
-        return
-
-    build_concat(tracks, CONCAT_PLAYLIST_FILE)
-    write_nowplaying(tracks[0])
-
-    video = VIDEO_FILE if VIDEO_FILE.exists() else None
-    has_logo = FFMPEG_LOGO.exists()
-
-    threading.Thread(
-        target=lambda: [write_nowplaying(t) or time.sleep(180) for t in tracks],
-        daemon=True
-    ).start()
-
-    while True:
-        cmd = build_ffmpeg_cmd(url, video, has_logo)
-        watchdog_ffmpeg(cmd)
-        time.sleep(5)
+    run_loop()
 
 
 if __name__ == "__main__":
