@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# #!/usr/bin/env python3
 """
 ---------------------------------------------------------
  LOFI STREAMER v8.2.8 — MASTER CONFIG STABLE RELEASE
@@ -71,15 +71,15 @@ def load_config():
         return
 
     print(f"📄 Loading config from {CONFIG_FILE}")
-    
+
     for line in CONFIG_FILE.read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
-        
+
         key, val = line.split("=", 1)
         key, val = key.strip(), val.strip()
-        
+
         if key in SETTINGS:
             SETTINGS[key] = val
 
@@ -130,8 +130,8 @@ def load_tracks():
     valid_exts = (".mp3", ".wav", ".flac", ".m4a")
     try:
         tracks = [
-            t for t in PLAYLIST_DIR.iterdir() 
-            if t.suffix.lower() in valid_exts 
+            t for t in PLAYLIST_DIR.iterdir()
+            if t.suffix.lower() in valid_exts
             and not t.name.startswith(".")
             and not t.name.startswith("._")
         ]
@@ -151,14 +151,14 @@ def get_track_metadata(track: Path) -> str:
         m = mutagen.File(track, easy=True)
         title = m.get("title", [""])[0] if m else ""
         artist = m.get("artist", [""])[0] if m else ""
-        
+
         if artist and title:
             return f"{artist} - {title}"
         elif title:
             return title
     except Exception:
         pass
-    
+
     return track.stem
 
 
@@ -167,13 +167,13 @@ def write_nowplaying(track: Path):
     display_name = get_track_metadata(track)
     # Escape colons for FFmpeg drawtext
     escaped = display_name.replace(":", r"\:")
-    
+
     try:
         NOWPLAYING_FILE.write_text(escaped)
         CURRENT_TRACK_FILE.write_text(display_name)
     except Exception as e:
         print(f"⚠️ Failed to write now playing: {e}")
-    
+
     # Update watchdog
     try:
         WATCHDOG_FILE.write_text(str(time.time()))
@@ -298,55 +298,55 @@ def check_ffmpeg_health(proc: subprocess.Popen) -> bool:
     """Check if FFmpeg process is healthy"""
     if proc.poll() is not None:
         return False  # Process has exited
-    
+
     # Check watchdog timestamp
     try:
         if not WATCHDOG_FILE.exists():
             return True  # Give it time to start
-        
+
         ts = float(WATCHDOG_FILE.read_text().strip())
         age = time.time() - ts
-        
+
         if age > WATCHDOG_STALL_THRESHOLD:
             print(f"⚠️ Stream stalled ({age:.0f}s since last update)")
             return False
     except Exception:
         pass
-    
+
     return True
 
 
 def watchdog_monitor(proc: subprocess.Popen, stop_event: threading.Event, restart_callback):
     """Monitor FFmpeg health in background thread"""
     print("🐕 Watchdog started")
-    
+
     consecutive_stalls = 0
     last_network_check = time.time()
-    
+
     while not stop_event.is_set():
         time.sleep(WATCHDOG_INTERVAL)
-        
+
         if stop_event.is_set():
             break
-        
+
         # Check FFmpeg health
         if not check_ffmpeg_health(proc):
             consecutive_stalls += 1
             print(f"⚠️ Watchdog detected issue (count: {consecutive_stalls})")
-            
+
             if consecutive_stalls >= 2:
                 print("❌ Watchdog: Triggering restart")
                 restart_callback()
                 break
         else:
             consecutive_stalls = 0
-        
+
         # Periodic network check (every 5 minutes)
         if time.time() - last_network_check > 300:
             if not check_network():
                 print("⚠️ Watchdog: Network connectivity lost")
             last_network_check = time.time()
-    
+
     print("🐕 Watchdog stopped")
 
 
@@ -369,21 +369,21 @@ def cleanup_process(proc: subprocess.Popen):
 
 def run_streaming_session(tracks, stop_event: threading.Event) -> bool:
     """Run one streaming session"""
-    
+
     if not tracks:
         print("❌ No tracks available")
         return False
-    
+
     # Build concat file
     if not build_concat(tracks):
         return False
-    
+
     # Write initial now playing
     write_nowplaying(tracks[0])
-    
+
     # Build and start FFmpeg
     cmd = build_ffmpeg_cmd(tracks)
-    
+
     print("▶️ Starting FFmpeg stream...")
     try:
         proc = subprocess.Popen(
@@ -395,28 +395,28 @@ def run_streaming_session(tracks, stop_event: threading.Event) -> bool:
     except Exception as e:
         print(f"❌ Failed to start FFmpeg: {e}")
         return False
-    
+
     # Start watchdog
     should_restart = threading.Event()
-    
+
     def restart_trigger():
         should_restart.set()
         stop_event.set()
-    
+
     watchdog = threading.Thread(
         target=watchdog_monitor,
         args=(proc, stop_event, restart_trigger),
         daemon=True
     )
     watchdog.start()
-    
+
     # Monitor process
     try:
         while not stop_event.is_set():
             ret = proc.poll()
             if ret is not None:
                 print(f"❌ FFmpeg exited with code {ret}")
-                
+
                 # Try to read error output
                 try:
                     stderr = proc.stderr.read().decode()
@@ -424,54 +424,54 @@ def run_streaming_session(tracks, stop_event: threading.Event) -> bool:
                         print(f"FFmpeg error: {stderr[-500:]}")
                 except Exception:
                     pass
-                
+
                 should_restart.set()
                 break
-            
+
             time.sleep(1)
-    
+
     except KeyboardInterrupt:
         print("\n👋 Interrupted by user")
         stop_event.set()
-    
+
     finally:
         cleanup_process(proc)
         try:
             watchdog.join(timeout=2)
         except Exception:
             pass
-    
+
     return should_restart.is_set()
 
 
 def run_loop():
     """Main streaming loop with auto-restart"""
     global global_stop
-    
+
     restart_count = 0
     last_restart_time = 0
-    
+
     # Signal handlers
     def signal_handler(sig, frame):
         global global_stop
         print("\n👋 Shutdown signal received")
         global_stop = True
-    
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
+
     while not global_stop:
         print("\n" + "="*60)
         print("🚀 Starting streaming session")
         print("="*60 + "\n")
-        
+
         # Load tracks
         tracks = load_tracks()
         if not tracks:
             print("⚠️ No tracks found. Waiting 30 seconds...")
             time.sleep(30)
             continue
-        
+
         # Check network
         if not check_network():
             print("⚠️ RTMP server unreachable. Waiting...")
@@ -479,35 +479,35 @@ def run_loop():
                 time.sleep(10)
             if global_stop:
                 break
-        
+
         # Run session
         stop_event = threading.Event()
         should_restart = run_streaming_session(tracks, stop_event)
-        
+
         if global_stop:
             break
-        
+
         if not should_restart:
             print("❌ Session ended without restart request")
             break
-        
+
         # Check restart limits
         current_time = time.time()
         if current_time - last_restart_time < RESTART_COOLDOWN:
             restart_count += 1
         else:
             restart_count = 1
-        
+
         last_restart_time = current_time
-        
+
         if restart_count > MAX_RESTART_ATTEMPTS:
             print(f"❌ Max restart attempts ({MAX_RESTART_ATTEMPTS}) reached")
             print("❌ Giving up. Check your configuration and network.")
             break
-        
+
         print(f"\n🔄 Restarting stream (attempt {restart_count}/{MAX_RESTART_ATTEMPTS})")
         print(f"⏳ Waiting {RESTART_COOLDOWN}s...")
-        
+
         # Cooldown with interrupt check
         for _ in range(RESTART_COOLDOWN):
             if global_stop:
@@ -518,15 +518,15 @@ def run_loop():
 def main():
     print(f"\n🌙 LOFI STREAMER v{VERSION}")
     print("="*60 + "\n")
-    
+
     load_config()
-    
+
     if not SETTINGS["STREAM_URL"]:
         print("❌ STREAM_URL missing in config")
         print("💡 Add it to stream_config.txt:")
         print("   STREAM_URL=rtmp://your-stream-url/app/key")
         return
-    
+
     # Validate directories
     for dir_path, name in [
         (PLAYLIST_DIR, "Playlist"),
@@ -540,16 +540,16 @@ def main():
                 print(f"✓ Created {name} directory")
             except Exception as e:
                 print(f"❌ Failed to create {name} directory: {e}")
-    
+
     print("\n▶️ Starting main loop...\n")
-    
+
     try:
         run_loop()
     except Exception as e:
         print(f"\n❌ Fatal error: {e}")
         import traceback
         traceback.print_exc()
-    
+
     print("\n👋 Streamer shut down\n")
 
 
