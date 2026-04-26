@@ -1,6 +1,8 @@
 🎧 GENDEMIK DIGITAL — Lofi Streamer (+ Dashboard Adding soon)
 Raspberry Pi 4 / 5 • Picamera2 • YouTube RTMP Streaming
 
+THIS PROJECT IS WORK IN PROGRESS
+
 Maintainer: Ms Stevie Woo — Manchester, UK
 Brand: GENDEMIK DIGITAL
 
